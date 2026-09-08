@@ -78,10 +78,11 @@ were European roles. `locOK()` now splits it:
 - remote and names a foreign country/city → reject
 - bare `Remote` with no country → accept (US companies usually mean US-remote)
 
-Metro abbreviations (`NYC`, `NY`, `SF`, `SEA`) are matched **case-sensitively**
-— boards always write them uppercase, and lowercasing would match `sea` and
-`ny` inside ordinary words. `LA` is deliberately not an abbreviation: `New
-Orleans, LA` is Louisiana, so Los Angeles must be spelled out.
+Metro abbreviations (`NYC`, `NY`, `SF`, `SEA`, `LA`) are matched
+**case-sensitively** — boards always write them uppercase, and lowercasing
+would match `sea` and `ny` inside ordinary words. `LA` is additionally checked
+against a Louisiana guard, since it is also that state's code: `SF, LA, NYC`
+is Los Angeles, `New Orleans, LA` is not.
 
 Built against a 29-case table of real location strings, including
 `US-Remote; Canada-Remote` (accept), `Taiwan - Remote` (reject) and

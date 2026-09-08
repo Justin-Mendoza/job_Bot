@@ -61,5 +61,6 @@
   { "name": "FlatironHealth",  "ats": "greenhouse",  "slug": "flatironhealth" },
   { "name": "Middesk",         "ats": "ashby",       "slug": "middesk" },
   { "name": "ModernTreasury",  "ats": "ashby",       "slug": "moderntreasury" },
-  { "name": "Ro",              "ats": "lever",       "slug": "ro" }
+  { "name": "Ro",              "ats": "lever",       "slug": "ro" },
+  { "name": "DoorDash",        "ats": "greenhouse",  "slug": "doordashusa" }
 ]

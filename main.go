@@ -48,9 +48,12 @@ var (
 	cityRe = regexp.MustCompile(`(?i)new york|san francisco|bay area|chicago|los angeles|boston|seattle`)
 	// Metro abbreviations are case-SENSITIVE: boards write them uppercase
 	// ("SF, NYC", "NYC, SEA"). Lowercasing would match "sea"/"ny" inside
-	// ordinary words. LA is deliberately excluded — "New Orleans, LA" is
-	// Louisiana, not Los Angeles, so LA must be spelled out.
+	// ordinary words.
 	abbrevRe = regexp.MustCompile(`\b(NYC|NY|SF|SEA)\b`)
+	// "LA" is ambiguous — it is also the state code for Louisiana. Accept it
+	// only when no Louisiana city or the state name appears alongside it.
+	laRe        = regexp.MustCompile(`\bLA\b`)
+	louisianaRe = regexp.MustCompile(`(?i)\b(louisiana|new orleans|baton rouge|shreveport|lake charles|metairie)\b`)
 	// "remote" alone is not enough: Affirm posts "Remote Spain" and "Remote
 	// Poland", which a naive match treats as local.
 	remoteRe  = regexp.MustCompile(`(?i)\bremote\b`)
@@ -430,6 +433,9 @@ func notify(webhook string, j Job) error {
 // bare "Remote" yes (US companies usually mean US-remote).
 func locOK(loc string) bool {
 	if cityRe.MatchString(loc) || abbrevRe.MatchString(loc) {
+		return true
+	}
+	if laRe.MatchString(loc) && !louisianaRe.MatchString(loc) {
 		return true
 	}
 	if !remoteRe.MatchString(loc) {

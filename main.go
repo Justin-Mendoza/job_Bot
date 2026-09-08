@@ -17,7 +17,7 @@ import (
 
 type Company struct {
 	Name string `json:"name"`
-	ATS  string `json:"ats"`  // greenhouse | lever | ashby | workday | rippling
+	ATS  string `json:"ats"`  // greenhouse | lever | ashby | workday | rippling | snap
 	Slug string `json:"slug"` // for workday: "tenant/wd12/SiteName"
 }
 
@@ -253,6 +253,62 @@ func fetchRippling(c Company) ([]Job, error) {
 	return out, nil
 }
 
+// Snap runs Workday underneath (wd1.myworkdaysite.com — note: a different host
+// and path shape than fetchWorkday handles), but its careers site publishes the
+// whole board as one flat JSON feed, department and location attached. One
+// request instead of nine paginated Workday POSTs, so go through the front door.
+// Slug is the careers host, e.g. "careers.snap.com".
+func fetchSnap(c Company) ([]Job, error) {
+	url := fmt.Sprintf("https://%s/api/jobs", c.Slug)
+	var body struct {
+		Body []struct {
+			Source struct {
+				ID              string `json:"id"`
+				Title           string `json:"title"`
+				AbsoluteURL     string `json:"absolute_url"`
+				Departments     string `json:"departments"`
+				EmploymentType  string `json:"employment_type"`
+				PrimaryLocation string `json:"primary_location"`
+				Offices         []struct {
+					Location string `json:"location"`
+				} `json:"offices"`
+			} `json:"_source"`
+		} `json:"body"`
+	}
+	if err := getJSON(url, &body); err != nil {
+		return nil, err
+	}
+	out := make([]Job, 0, len(body.Body))
+	for _, h := range body.Body {
+		j := h.Source
+		// A role open in several offices lists them all; primary_location is a
+		// bare city ("New York") and only names one of them.
+		loc := j.PrimaryLocation
+		if len(j.Offices) > 0 {
+			parts := make([]string, 0, len(j.Offices))
+			for _, o := range j.Offices {
+				parts = append(parts, o.Location)
+			}
+			loc = strings.Join(parts, "; ")
+		}
+		// employment_type is "Regular" or "Intern"; only the latter matters.
+		empType := ""
+		if strings.EqualFold(j.EmploymentType, "intern") {
+			empType = "Intern"
+		}
+		out = append(out, Job{
+			Company:    c.Name,
+			ID:         j.ID,
+			Title:      j.Title,
+			Location:   loc,
+			URL:        j.AbsoluteURL,
+			Department: j.Departments,
+			EmpType:    empType,
+		})
+	}
+	return out, nil
+}
+
 func fetchWorkday(c Company) ([]Job, error) {
 	parts := strings.Split(c.Slug, "/")
 	if len(parts) != 3 {
@@ -332,6 +388,8 @@ func fetch(c Company) ([]Job, error) {
 		return fetchRippling(c)
 	case "workday":
 		return fetchWorkday(c)
+	case "snap":
+		return fetchSnap(c)
 	}
 	return nil, fmt.Errorf("unknown ats %q", c.ATS)
 }

@@ -62,5 +62,9 @@
   { "name": "Middesk",         "ats": "ashby",       "slug": "middesk" },
   { "name": "ModernTreasury",  "ats": "ashby",       "slug": "moderntreasury" },
   { "name": "Ro",              "ats": "lever",       "slug": "ro" },
-  { "name": "DoorDash",        "ats": "greenhouse",  "slug": "doordashusa" }
+  { "name": "DoorDash",        "ats": "greenhouse",  "slug": "doordashusa" },
+  { "name": "Kalshi",          "ats": "ashby",       "slug": "kalshi" },
+  { "name": "Polymarket",      "ats": "ashby",       "slug": "polymarket" },
+  { "name": "Bumble",          "ats": "ashby",       "slug": "bumbleinc" },
+  { "name": "Snap",            "ats": "snap",        "slug": "careers.snap.com" }
 ]

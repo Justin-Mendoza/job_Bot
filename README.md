@@ -4,16 +4,23 @@ Polls company ATS boards every 4 minutes, pings Discord when a **software
 engineering new grad** role opens in NYC, SF Bay, Chicago, LA, Boston or
 Seattle. Runs on a Fly.io machine for ~$2/month.
 
-A full cycle across the 63 boards scans ~10,400 postings in ~60 seconds, using
-well under 100 MB of RSS. Against the 4-minute interval that is ~25% duty
+A full cycle across the 68 boards scans ~11,200 postings in ~35 seconds, using
+well under 100 MB of RSS. Against the 4-minute interval that is ~15% duty
 cycle, leaving room for roughly 150 boards before it gets tight. Past that,
-drop the 300 ms per-company stagger in `cycle()` — at 63 boards it is already
-~19s of the 60s, and it is pure sleeping.
+drop the 300 ms per-company stagger in `cycle()` — at 68 boards it is already
+~20s of the 35s, and it is pure sleeping.
 
 **Workday is the exception.** It hard-caps pages at 20 postings (`limit: 50+`
 returns zero), so Salesforce alone was 73 requests and 160 seconds — 93% of the
 entire cycle. It is also the only ATS exposing no department metadata. It was
 dropped for that reason; the adapter is still there if you want it back.
+
+**Snap is a one-off.** It sits on Workday underneath, but on a different host
+and path shape (`wd1.myworkdaysite.com/recruiting/...`) than `fetchWorkday`
+builds. Its careers site publishes the whole board as one flat JSON feed with
+department and location attached, so `ats: "snap"` goes through that instead —
+one request rather than nine paginated Workday POSTs. The slug is the careers
+host, not a board name.
 
 ---
 
@@ -191,12 +198,12 @@ pushing, use the workflow's **Run workflow** button (`workflow_dispatch`).
 | Outbound bandwidth (~1.4 GiB) | ~$0.03 |
 | **Total** | **~$2.20** |
 
-Measured at 64 boards on a 4-minute interval: 54 MiB pulled per cycle, about
+Measured at 68 boards on a 4-minute interval: 54 MiB pulled per cycle, about
 572 GiB/month — but **inbound transfer is free on Fly**, and outbound is only
 request headers plus the occasional Discord POST.
 
 Neither polling frequency nor company count moves this much; you pay for the
-machine being on, not for what it does. Going from 8 to 64 boards changed the
+machine being on, not for what it does. Going from 8 to 68 boards changed the
 bill by pennies. The one thing that would double it is a dedicated IPv4.
 
 ## Gotchas already handled
@@ -212,9 +219,17 @@ bill by pennies. The one thing that would double it is a dedicated IPv4.
 - Every cycle logs `N jobs scanned, M boards failed`, so a board going 404 is
   visible in `fly logs` instead of just quietly returning nothing
 
+### Snap levels its titles
+
+Snap writes seniority as `Level N`, not as words: *"Software Engineer, Level 3"*
+is the new grad role, *"Level 4"* and up are not. `earlyRe` matches neither, and
+`notRe` catches none of them either, so **Snap currently alerts on nothing**. If
+you want it to fire, add `level\s*3\b` to `earlyRe` — but check the board
+first, because Level 3 is not consistently entry-level across teams.
+
 ## Adding companies
 
-Cycle time is not the limit — 64 boards scan 10,800 postings in ~60s, well
+Cycle time is not the limit — 68 boards scan 11,200 postings in ~35s, well
 inside the 4-minute interval. The limit is **slug rot**,
 and it is silent. Of 21 candidate slugs probed, 2 returned `200 OK` with
 `{"jobs":[]}`: a dead slug is indistinguishable from a quiet day unless you
@@ -234,13 +249,15 @@ Always eyeball a title before trusting a slug:
 curl -s "https://api.ashbyhq.com/posting-api/job-board/<slug>" | jq -r '.jobs[0].title'
 curl -s "https://boards-api.greenhouse.io/v1/boards/<slug>/departments" | jq -r '[.departments[].jobs[]][0].title'
 curl -s "https://api.lever.co/v0/postings/<slug>?mode=json" | jq -r '.[0].text'
+curl -s "https://<careers-host>/api/jobs" | jq -r '.body[0]._source.title'   # snap
 ```
 
 If that prints a plausible job title, the slug is good.
 
 Known-bad, do not re-add: `lever/latch` (2 postings, one titled *"I don't see
 the right role"*), `greenhouse/linkedin` and `lever/linkedin` (sandbox data),
-`ashby/mercury` and `ashby/deel` (empty boards).
+`ashby/mercury` and `ashby/deel` (empty boards), `ashby/bumble` (empty — the
+live Bumble board is `ashby/bumbleinc`).
 
 Most large tech companies aren't reachable this way at all — Google, Apple,
 Microsoft, Meta, Amazon, Oracle, Uber, Tesla and Netflix returned nothing on
@@ -250,7 +267,15 @@ any of the four ATSes. They run custom sites or Workday.
 
 Bloomberg, Two Sigma, Citadel and similar run custom careers sites
 with no public JSON. (**Jane Street is on Greenhouse** — slug `janestreet` —
-despite what you might assume.) Options, best first:
+despite what you might assume.)
+
+**Hinge** is the same story and was probed thoroughly: 404 on greenhouse, lever
+and ashby under every plausible slug, and `hinge.co/careers` renders its
+openings from Sanity CMS with no ATS host anywhere in the page or its JS
+bundles. `lever/matchgroup` is a live board (22 NYC roles) but it is Match
+Group corporate and Hyperconnect, not Hinge. Nothing to point an adapter at.
+
+Options, best first:
 
 1. Check for an embedded blob: `curl <careers-url> | grep -o '__NEXT_DATA__'`.
    If it's there, the full job list is usually in it — write another adapter.

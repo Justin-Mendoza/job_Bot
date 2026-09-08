@@ -29,7 +29,8 @@ jobs:
           python3 -c "
           import json,sys
           d=json.load(open('companies.json'))
-          ok={'greenhouse','lever','ashby','workday','rippling'}
+          # must match the switch in fetch() in main.go
+          ok={'greenhouse','lever','ashby','workday','rippling','snap'}
           for c in d:
               assert set(c)>={'name','ats','slug'}, c
               assert c['ats'] in ok, f\"unknown ats {c['ats']} in {c['name']}\"

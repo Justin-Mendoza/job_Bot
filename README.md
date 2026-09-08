@@ -214,7 +214,8 @@ bill by pennies. The one thing that would double it is a dedicated IPv4.
 
 ## Adding companies
 
-Cycle time is not the limit — 29 boards ran in 40s. The limit is **slug rot**,
+Cycle time is not the limit — 64 boards scan 10,800 postings in ~60s, well
+inside the 4-minute interval. The limit is **slug rot**,
 and it is silent. Of 21 candidate slugs probed, 2 returned `200 OK` with
 `{"jobs":[]}`: a dead slug is indistinguishable from a quiet day unless you
 look. The cycle now logs `WARN ... board returned 0 jobs` for exactly this.

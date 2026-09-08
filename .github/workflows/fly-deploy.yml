@@ -1,0 +1,53 @@
+# Push to main -> deploy to Fly. Editing companies.json on GitHub is enough to
+# change the watchlist; the machine restarts and /data/seen.json survives, so
+# a redeploy never re-alerts you for jobs already seen.
+name: Fly Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**.go'
+      - 'go.mod'
+      - 'companies.json'
+      - 'Dockerfile'
+      - 'fly.toml'
+      - '.github/workflows/fly-deploy.yml'
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Vet and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - name: companies.json is valid
+        run: |
+          python3 -c "
+          import json,sys
+          d=json.load(open('companies.json'))
+          ok={'greenhouse','lever','ashby','workday','rippling'}
+          for c in d:
+              assert set(c)>={'name','ats','slug'}, c
+              assert c['ats'] in ok, f\"unknown ats {c['ats']} in {c['name']}\"
+          print(f'{len(d)} companies OK')
+          "
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - run: go vet ./...
+      - run: go build -o /dev/null .
+
+  deploy:
+    name: Deploy
+    needs: test
+    runs-on: ubuntu-latest
+    concurrency: deploy-group
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - run: flyctl deploy --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

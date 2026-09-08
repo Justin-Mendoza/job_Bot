@@ -1,0 +1,6 @@
+.env
+# compiled binary
+jobwatch
+# local state when testing with STATE_PATH=./seen.json
+seen.json
+seen.json.tmp

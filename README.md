@@ -82,7 +82,10 @@ Metro abbreviations (`NYC`, `NY`, `SF`, `SEA`, `LA`) are matched
 **case-sensitively** — boards always write them uppercase, and lowercasing
 would match `sea` and `ny` inside ordinary words. `LA` is additionally checked
 against a Louisiana guard, since it is also that state's code: `SF, LA, NYC`
-is Los Angeles, `New Orleans, LA` is not.
+is Los Angeles, `New Orleans, LA` is not. Louisiana is rejected *before* the
+remote rule too, so `Louisiana - Remote` does not sneak in as generic
+US-remote — but a posting listing both (`New Orleans, LA; New York, NY`)
+still matches on the target metro.
 
 Built against a 29-case table of real location strings, including
 `US-Remote; Canada-Remote` (accept), `Taiwan - Remote` (reject) and

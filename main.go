@@ -438,6 +438,11 @@ func locOK(loc string) bool {
 	if laRe.MatchString(loc) && !louisianaRe.MatchString(loc) {
 		return true
 	}
+	// Louisiana is never a target metro. Checked before the remote rule so
+	// "Louisiana - Remote" cannot slip through as a generic US-remote role.
+	if louisianaRe.MatchString(loc) {
+		return false
+	}
 	if !remoteRe.MatchString(loc) {
 		return false
 	}

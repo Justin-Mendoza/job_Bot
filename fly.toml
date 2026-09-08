@@ -1,0 +1,12 @@
+app = "jobwatch"
+primary_region = "ewr"
+
+[build]
+
+[mounts]
+  source = "jobwatch_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

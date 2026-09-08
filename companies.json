@@ -1,0 +1,11 @@
+[
+  { "name": "Ramp",      "ats": "ashby",      "slug": "ramp" },
+  { "name": "Notion",    "ats": "ashby",      "slug": "notion" },
+  { "name": "Harvey",    "ats": "ashby",      "slug": "harvey" },
+  { "name": "Stripe",    "ats": "greenhouse", "slug": "stripe" },
+  { "name": "Pinterest", "ats": "greenhouse", "slug": "pinterest" },
+  { "name": "Figma",     "ats": "greenhouse", "slug": "figma" },
+  { "name": "Spotify",   "ats": "lever",      "slug": "spotify" },
+  { "name": "Rippling",  "ats": "rippling",   "slug": "rippling" },
+  { "name": "Salesforce","ats": "workday",    "slug": "salesforce/wd12/External_Career_Site" }
+]

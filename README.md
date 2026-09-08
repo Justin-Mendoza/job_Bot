@@ -136,12 +136,49 @@ fly logs
 app only makes outbound requests, it serves nothing. If `fly launch` allocated
 one anyway: `fly ips list` then `fly ips release <addr>`.
 
+**Check `fly.toml` after `fly launch`.** It will try to add an `[http_service]`
+block with `auto_stop_machines = 'stop'` and `min_machines_running = 0`. That
+is fatal here: this app never receives HTTP traffic, so Fly stops the machine
+shortly after boot, the poll ticker dies, and you get no alerts and no error —
+it just looks like a quiet job market. Delete the whole block. The correct
+`fly.toml` has no `[http_service]` and no `[[services]]`, only `[build]`,
+`[[mounts]]` and `[[vm]]`.
+
 ## 6. Confirm it's alive
 
 ```bash
 fly logs                        # should show a cycle every 4 min
 fly status
 ```
+
+The first cycle logs `first run: ... no alerts sent` and sends nothing. That is
+correct — it records the currently-open matches so you don't get pinged for
+jobs that have been up for weeks. Real alerts start on cycle two.
+
+## 7. Auto-deploy from GitHub
+
+`.github/workflows/fly-deploy.yml` redeploys on every push to `main`, so the
+watchlist can be extended by editing `companies.json` in the GitHub web UI —
+no local checkout, no `fly deploy`. Takes about 90 seconds end to end.
+
+One-time setup (the token is piped straight into GitHub so it never lands in
+your shell history or terminal):
+
+```bash
+fly tokens create deploy -x 8760h | tail -1 | tr -d '\n' \
+  | gh secret set FLY_API_TOKEN --repo <you>/job_Bot
+```
+
+The workflow gates deploy behind a test job — `companies.json` must parse and
+every entry must name a known ATS, plus `gofmt`, `go vet` and `go build`. A
+typo like `"ats": "greehouse"` fails CI instead of shipping a bot that
+silently skips that company.
+
+Redeploying is safe: `seen.json` lives on the Fly volume, not in the image, so
+a restart never re-alerts jobs already sent. Worst case you miss one poll.
+
+Path filters mean README-only edits don't trigger a deploy. To deploy without
+pushing, use the workflow's **Run workflow** button (`workflow_dispatch`).
 
 ---
 
@@ -151,10 +188,16 @@ fly status
 |---|---|
 | shared-cpu-1x, 256MB, always on | ~$2.02 |
 | 1GB volume | $0.15 |
-| Bandwidth (<1GB) | ~$0.02 |
+| Outbound bandwidth (~1.4 GiB) | ~$0.03 |
+| **Total** | **~$2.20** |
 
-Polling frequency doesn't change this — you pay for the machine being on, not
-for what it does.
+Measured at 64 boards on a 4-minute interval: 54 MiB pulled per cycle, about
+572 GiB/month — but **inbound transfer is free on Fly**, and outbound is only
+request headers plus the occasional Discord POST.
+
+Neither polling frequency nor company count moves this much; you pay for the
+machine being on, not for what it does. Going from 8 to 64 boards changed the
+bill by pennies. The one thing that would double it is a dedicated IPv4.
 
 ## Gotchas already handled
 

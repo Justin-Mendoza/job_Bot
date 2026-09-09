@@ -59,8 +59,8 @@ A job has to clear four gates in `matches()` (`main.go`). All four, or no alert:
 |---|---|
 | `locOK()` | one of six target metros, or remote **not pinned to another country**. See below |
 | `EmpType != "Intern"` | Ashby/Lever report employment type structurally |
-| `notRe` | drops interns, recruiters, sales, ops, PhD, and anything senior/staff/lead |
-| `earlyRe` + (`sweRe` or `engDeptRe`) | early-career **and** software engineering |
+| `notRe` | drops interns, fellowships, recruiters, sales, ops, PhD, and anything senior/staff/lead |
+| (`earlyRe` or `earlyDeptRe`) + (`sweRe` or `engDeptRe`) | early-career **and** software engineering |
 
 The last one is the important pair. Seniority and role-type are *separate*
 axes — filtering on "new grad" alone pulls in `Head of Early Career Recruiting`
@@ -213,6 +213,9 @@ bill by pennies. The one thing that would double it is a dedicated IPv4.
 - Alerts capped at 20/cycle so a bad slug can't flood the channel
 - State written atomically after every cycle, so a restart doesn't re-alert
 - Ashby's `isListed: false` roles are skipped
+- The Discord embed carries an explicit **Apply →** link. The title is already
+  a hyperlink via the embed's `url`, but it renders the same colour as plain
+  text on most themes and gets missed, so the link is repeated visibly
 - Workday paginates and gets a slower request cadence than the rest
 - Rippling pages to `totalPages`, Workday to the response's `total` — both used
   to silently truncate at 100 and 400 postings respectively
@@ -223,9 +226,44 @@ bill by pennies. The one thing that would double it is a dedicated IPv4.
 
 Snap writes seniority as `Level N`, not as words: *"Software Engineer, Level 3"*
 is the new grad role, *"Level 4"* and up are not. `earlyRe` matches neither, and
-`notRe` catches none of them either, so **Snap currently alerts on nothing**. If
-you want it to fire, add `level\s*3\b` to `earlyRe` — but check the board
-first, because Level 3 is not consistently entry-level across teams.
+`notRe` catches none of them either, so **Snap alerts on nothing** — it is
+watched for its board, not for its hits.
+
+**This is deliberate, not a gap to fix.** Adding `level\s*3\b` to `earlyRe` was
+considered and rejected: Level 3 is not consistently entry-level across Snap's
+teams, so the rule would pull in mid-level roles for the sake of one board. If
+that ever changes, that one-line addition is all it takes.
+
+### What the early-career gate actually keys on
+
+`earlyRe` reads the **title** and nothing else, matching one of: `new grad`,
+`graduate program/role`, `university graduate/hire`, `new college grad`,
+`early career`, `early in career`, `entry level`, `campus hire`, `recent grad`,
+`class of 20NN`, or a trailing level marker (`Software Engineer I`, `SWE 1` —
+the trailing `\b` correctly rejects `II` and `III`).
+
+`earlyDeptRe` is the fallback for boards that carry the signal only in the
+**department**: Coinbase files new grad roles under *"Internships & Emerging
+Talent Positions"* with titles as plain as `Software Engineer`. The intern gates
+still apply, so the internships sitting in that same department stay filtered.
+
+**What it still misses, by design.** Measured across all 68 boards: of 704
+in-metro, non-senior engineering roles, only 13 pass. The other 691 are mostly
+bare `Software Engineer`, `Software Engineer, Backend`, `Site Reliability
+Engineer` — titles where seniority lives in the description, not the name.
+Widening further means accepting false positives, because an unqualified
+"Software Engineer" is genuinely ambiguous. `associate` and `junior` were tried
+and rejected for this reason: on real boards they are mostly seniority-neutral
+business titles that slip through via the `engDeptRe` department fallback.
+
+Two live examples of why the gate stays narrow:
+
+- **Snap** writes seniority as `Level N`, so nothing on its board matches (see
+  below).
+- **Fellowships** looked early-career and were not — DoorDash's *"AI Research
+  Fellowship (Summer and Fall 2026)"* entered through the department fallback
+  before `fellowship|\bfellow\b` was added to `notRe`. ("Fellow" is also a
+  *senior* IC title at some companies, so excluding it cuts both ways.)
 
 ## Adding companies
 

@@ -34,14 +34,23 @@ type Job struct {
 func (j Job) Key() string { return j.Company + ":" + j.ID }
 
 var (
-	// axis 1 — is this early-career?
-	earlyRe = regexp.MustCompile(`(?i)\bnew.?grad|\bgrad(uate)?\s+(program|role|opportunit)|university\s+(grad|hire)|new\s+college\s+grad|early.?career|entry.?level|campus\s+hire|software engineer\s*(i|1)\b|swe\s*(i|1)\b`)
+	// axis 1 — is this early-career? Title first.
+	// "associate"/"junior" are deliberately NOT here: on real boards they are
+	// mostly seniority-neutral business titles (Associate General Counsel), and
+	// adding them let senior non-eng roles through the engDeptRe fallback.
+	earlyRe = regexp.MustCompile(`(?i)\bnew.?grad|\bgrad(uate)?\s+(program|role|opportunit)|university\s+(grad|hire)|new\s+college\s+grad|early.?career|early\s+in\s+career|entry.?level|campus\s+hire|recent\s+grad|class\s+of\s+20\d\d|software engineer\s*(i|1)\b|swe\s*(i|1)\b`)
+	// axis 1b — department fallback. Some boards carry the early-career signal
+	// only in the department: Coinbase files new grad roles under "Internships &
+	// Emerging Talent Positions" with a title as plain as "Software Engineer".
+	// The intern gates (EmpType, notRe) still apply, so the internships in that
+	// same department stay filtered out.
+	earlyDeptRe = regexp.MustCompile(`(?i)emerging\s+talent|early\s+career|new\s+grad|university\s+(recruit|program|hir)|campus\s+(recruit|hir)`)
 	// axis 2 — is this actually software engineering?
 	sweRe = regexp.MustCompile(`(?i)software\s+eng|software\s+dev|\bswe\b|backend|back.end|frontend|front.end|full.?stack|infrastructure eng|platform eng|systems eng|security eng|machine learning eng|\bml\s+eng|android eng|ios eng|mobile eng|site reliability|\bsre\b`)
 	// axis 2b — department fallback, for eng titles with no role keyword
 	engDeptRe = regexp.MustCompile(`(?i)engineer|software|infrastructure|platform|developer|technology`)
 	// axis 3 — hard excludes: interns, recruiting, sales, ops, and anything senior
-	notRe = regexp.MustCompile(`(?i)\bintern\b|internship|\bco.?op\b|recruit|talent acquisition|\bsales\b|business development|account exec|marketing|\bphd\b|apprentice|program manager|head of|director|\bmanager\b|principal|\bstaff\b|senior|\bsr\.?\b|\blead\b`)
+	notRe = regexp.MustCompile(`(?i)\bintern\b|internship|\bco.?op\b|fellowship|\bfellow\b|recruit|talent acquisition|\bsales\b|business development|account exec|marketing|\bphd\b|apprentice|program manager|head of|director|\bmanager\b|principal|\bstaff\b|senior|\bsr\.?\b|\blead\b`)
 
 	// Location is free text and wildly inconsistent, so it takes several
 	// regexes. Target metros: NYC, SF Bay, Chicago, LA, Boston, Seattle.
@@ -458,6 +467,10 @@ func notify(webhook string, j Job) error {
 	if j.Department != "" {
 		desc += fmt.Sprintf("\n%s", j.Department)
 	}
+	// The embed title is already a hyperlink via "url", but it does not read as
+	// one — same colour as plain text on most themes, so it gets missed. Repeat
+	// it as an explicit masked link so there is something obviously clickable.
+	desc += fmt.Sprintf("\n\n**[Apply →](%s)**", j.URL)
 	payload := map[string]any{
 		"embeds": []map[string]any{{
 			"title":       j.Title,
@@ -517,7 +530,7 @@ func matches(j Job) bool {
 	if notRe.MatchString(j.Title) {
 		return false
 	}
-	if !earlyRe.MatchString(j.Title) {
+	if !earlyRe.MatchString(j.Title) && !earlyDeptRe.MatchString(j.Department) {
 		return false
 	}
 	return sweRe.MatchString(j.Title) || engDeptRe.MatchString(j.Department)

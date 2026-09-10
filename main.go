@@ -3,10 +3,12 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
 	"strings"
@@ -485,6 +487,14 @@ func saveState(m map[string]bool) {
 
 // ---------- notify ----------
 
+// redact strips the webhook out of an error message, keeping the useful part.
+func redact(err error, secret string) error {
+	if err == nil {
+		return nil
+	}
+	return errors.New(strings.ReplaceAll(err.Error(), secret, "<webhook>"))
+}
+
 func notify(webhook string, j Job) error {
 	desc := fmt.Sprintf("**%s** · %s", j.Company, j.Location)
 	if j.Department != "" {
@@ -513,7 +523,10 @@ func notify(webhook string, j Job) error {
 	b, _ := json.Marshal(payload)
 	resp, err := client.Post(webhook, "application/json", bytes.NewReader(b))
 	if err != nil {
-		return err
+		// net/http errors embed the full URL, and the webhook URL *is* the
+		// credential — anyone holding it can post to the channel. Never let it
+		// reach the logs.
+		return redact(err, webhook)
 	}
 	defer resp.Body.Close()
 	io.Copy(io.Discard, resp.Body)
@@ -640,9 +653,18 @@ func cycle(companies []Company, seen map[string]bool, seeded bool, webhook strin
 func main() {
 	log.SetFlags(log.LstdFlags | log.LUTC)
 
-	webhook := os.Getenv("DISCORD_WEBHOOK")
+	// TrimSpace is not cosmetic: a secret set from a file or a shell heredoc
+	// picks up a trailing newline, and net/url rejects the URL as containing a
+	// control character. Every single delivery then fails while the board scan
+	// keeps reporting success, so the bot looks healthy and silently sends
+	// nothing.
+	webhook := strings.TrimSpace(os.Getenv("DISCORD_WEBHOOK"))
 	if webhook == "" {
 		log.Fatal("DISCORD_WEBHOOK not set")
+	}
+	// Fail loudly at startup rather than once per matched job forever.
+	if _, err := url.Parse(webhook); err != nil {
+		log.Fatalf("DISCORD_WEBHOOK is not a valid URL: %v", redact(err, webhook))
 	}
 
 	// TEST_ALERT=1 sends one synthetic alert and exits — proves the webhook URL

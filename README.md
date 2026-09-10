@@ -240,6 +240,16 @@ bill by pennies. The one thing that would double it is a dedicated IPv4.
 - Alerts capped at 20/cycle so a bad slug can't flood the channel
 - State written atomically after every cycle, so a restart doesn't re-alert
 - Ashby's `isListed: false` roles are skipped
+- `DISCORD_WEBHOOK` is trimmed and URL-checked at startup. A secret set from a
+  file or a shell heredoc carries a trailing newline, `net/url` rejects it as a
+  control character, and **every delivery fails while the scan keeps reporting
+  success** — the bot looks healthy and silently sends nothing. This happened
+  in production and stayed invisible until the first real match appeared, since
+  a cycle with nothing to send logs `0 sent, 0 retrying` either way. Run with
+  `TEST_ALERT=1` after any webhook change; it is the only thing that exercises
+  delivery end to end
+- Webhook URLs never reach the logs. `net/http` errors embed the full URL, and
+  that URL is the entire credential, so `redact()` strips it before logging
 - The Discord embed carries an explicit **Apply →** link. The title is already
   a hyperlink via the embed's `url`, but it renders the same colour as plain
   text on most themes and gets missed, so the link is repeated visibly

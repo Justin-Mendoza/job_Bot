@@ -236,6 +236,12 @@ bill by pennies. The one thing that would double it is a dedicated IPv4.
 ## Gotchas already handled
 
 - First run seeds state instead of dumping every open job into your channel
+- Closed postings are pruned from state each cycle, so a role that closes and
+  reopens alerts again instead of being suppressed forever. Only boards that
+  fetched successfully **and** returned a non-empty list are pruned — a stale
+  slug or a transient 404 must never flush a company's keys, or its whole back
+  catalogue re-alerts next cycle. A posting that blips out for one cycle costs
+  one duplicate alert, which is the right way round
 - One board failing (404, 500, timeout) logs and continues, never kills the cycle
 - Alerts capped at 20/cycle so a bad slug can't flood the channel
 - State written atomically after every cycle, so a restart doesn't re-alert

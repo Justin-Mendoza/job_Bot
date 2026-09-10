@@ -588,6 +588,11 @@ func matches(j Job) bool {
 func cycle(companies []Company, seen map[string]bool, seeded bool, webhook string) {
 	var fresh []Job
 	scanned, failed := 0, 0
+	// live holds every posting seen on a board this cycle; prunable holds the
+	// companies whose boards answered well enough to be trusted about what is
+	// no longer on them. See prune().
+	live := make(map[string]bool, 12000)
+	prunable := make(map[string]bool, len(companies))
 	for _, c := range companies {
 		jobs, err := fetch(c)
 		if err != nil {
@@ -599,6 +604,11 @@ func cycle(companies []Company, seen map[string]bool, seeded bool, webhook strin
 			// 200 OK with an empty list means the slug is stale or the company
 			// left that ATS. Silent at 8 companies, invisible at 60.
 			log.Printf("WARN %s (%s): board returned 0 jobs — check the slug", c.Name, c.ATS)
+		} else {
+			prunable[c.Name] = true
+		}
+		for _, j := range jobs {
+			live[j.Key()] = true
 		}
 		scanned += len(jobs)
 		for _, j := range jobs {
@@ -645,9 +655,37 @@ func cycle(companies []Company, seen map[string]bool, seeded bool, webhook strin
 		log.Printf("ALERT %s — %s (%s)", j.Company, j.Title, j.Location)
 		time.Sleep(400 * time.Millisecond) // discord rate limit
 	}
+	if n := prune(seen, live, prunable); n > 0 {
+		log.Printf("pruned %d closed postings from state", n)
+	}
 	log.Printf("cycle: %d jobs scanned, %d boards failed, %d sent, %d retrying", scanned, failed, sent, retry)
 
 	saveState(seen)
+}
+
+// prune forgets postings that have left their board, so a role that is closed
+// and later reopened alerts again instead of being suppressed forever by a
+// state file that only ever grows.
+//
+// It only touches companies in prunable — boards that fetched successfully AND
+// returned a non-empty list. A failed or empty board must never flush its keys:
+// a stale slug or a transient 404 would drop every posting that company has,
+// and the whole back catalogue would re-alert on the next cycle that works.
+//
+// A posting that vanishes for one cycle and comes back (board flakiness,
+// pagination glitch) costs one duplicate alert. That is the right way round —
+// this trades a rare duplicate for never silently missing a reopened role.
+func prune(seen, live, prunable map[string]bool) int {
+	n := 0
+	for k := range seen {
+		company, _, ok := strings.Cut(k, ":")
+		if !ok || !prunable[company] || live[k] {
+			continue
+		}
+		delete(seen, k)
+		n++
+	}
+	return n
 }
 
 func main() {

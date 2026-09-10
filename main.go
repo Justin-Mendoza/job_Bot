@@ -30,7 +30,6 @@ type Job struct {
 	Location   string
 	URL        string
 	Department string // "" when the board doesn't expose one (workday)
-	EmpType    string // ashby only: FullTime | Intern | Contract | Temporary
 }
 
 func (j Job) Key() string { return j.Company + ":" + j.ID }
@@ -40,19 +39,19 @@ var (
 	// "associate"/"junior" are deliberately NOT here: on real boards they are
 	// mostly seniority-neutral business titles (Associate General Counsel), and
 	// adding them let senior non-eng roles through the engDeptRe fallback.
-	earlyRe = regexp.MustCompile(`(?i)\bnew.?grad|\bgrad(uate)?\s+(program|role|opportunit)|university\s+(grad|hire)|new\s+college\s+grad|early.?career|early\s+in\s+career|entry.?level|campus\s+hire|recent\s+grad|class\s+of\s+20\d\d|software engineer\s*(i|1)\b|swe\s*(i|1)\b`)
+	earlyRe = regexp.MustCompile(`(?i)\bintern\b|internship|\bco.?op\b|\bnew.?grad|\bgrad(uate)?\s+(program|role|opportunit)|university\s+(grad|hire)|new\s+college\s+grad|early.?career|early\s+in\s+career|entry.?level|campus\s+hire|recent\s+grad|class\s+of\s+20\d\d|software engineer\s*(i|1)\b|swe\s*(i|1)\b`)
 	// axis 1b — department fallback. Some boards carry the early-career signal
 	// only in the department: Coinbase files new grad roles under "Internships &
 	// Emerging Talent Positions" with a title as plain as "Software Engineer".
-	// The intern gates (EmpType, notRe) still apply, so the internships in that
-	// same department stay filtered out.
+	// Internships in that department are wanted too, so nothing extra is
+	// needed to let them through.
 	earlyDeptRe = regexp.MustCompile(`(?i)emerging\s+talent|early\s+career|new\s+grad|university\s+(recruit|program|hir)|campus\s+(recruit|hir)`)
 	// axis 2 — is this actually software engineering?
 	sweRe = regexp.MustCompile(`(?i)software\s+eng|software\s+dev|\bswe\b|backend|back.end|frontend|front.end|full.?stack|infrastructure eng|platform eng|systems eng|security eng|machine learning eng|\bml\s+eng|android eng|ios eng|mobile eng|site reliability|\bsre\b`)
 	// axis 2b — department fallback, for eng titles with no role keyword
 	engDeptRe = regexp.MustCompile(`(?i)engineer|software|infrastructure|platform|developer|technology`)
-	// axis 3 — hard excludes: interns, recruiting, sales, ops, and anything senior
-	notRe = regexp.MustCompile(`(?i)\bintern\b|internship|\bco.?op\b|fellowship|\bfellow\b|recruit|talent acquisition|\bsales\b|business development|account exec|marketing|\bphd\b|apprentice|program manager|head of|director|\bmanager\b|principal|\bstaff\b|senior|\bsr\.?\b|\blead\b`)
+	// axis 3 — hard excludes: recruiting, sales, ops, PhD, and anything senior
+	notRe = regexp.MustCompile(`(?i)fellowship|\bfellow\b|recruit|talent acquisition|\bsales\b|business development|account exec|marketing|\bphd\b|apprentice|program manager|head of|director|\bmanager\b|principal|\bstaff\b|senior|\bsr\.?\b|\blead\b`)
 
 	// Location is free text and wildly inconsistent. Scope is the US and Canada,
 	// so the gate is exclusion-based: accept anything that does not name a place
@@ -101,8 +100,12 @@ const (
 	// truncated body and getting "unexpected end of JSON input".
 	maxBody = 64 << 20
 
-	maxPerCycle  = 20
-	pollInterval = 4 * time.Minute // a full cycle is ~60s at 63 boards
+	// Raised from 20 when internships were let in. Turning them on takes the
+	// steady-state match count from 15 to ~38, and the overflow is *discarded*,
+	// not deferred — at 20 the first cycle after that change would have marked
+	// ~18 real internships seen without ever alerting on them.
+	maxPerCycle  = 50
+	pollInterval = 4 * time.Minute // a full cycle is 58-105s at 83 boards
 )
 
 var statePath = envOr("STATE_PATH", "/data/seen.json")
@@ -188,7 +191,6 @@ func fetchLever(c Company) ([]Job, error) {
 			Location:   j.Categories.Location,
 			URL:        j.HostedURL,
 			Department: dept,
-			EmpType:    j.Categories.Commitment,
 		})
 	}
 	return out, nil
@@ -227,7 +229,6 @@ func fetchAshby(c Company) ([]Job, error) {
 			Location:   j.Location,
 			URL:        j.JobURL,
 			Department: dept,
-			EmpType:    j.EmploymentType,
 		})
 	}
 	return out, nil
@@ -325,11 +326,6 @@ func fetchSnap(c Company) ([]Job, error) {
 			}
 			loc = strings.Join(parts, "; ")
 		}
-		// employment_type is "Regular" or "Intern"; only the latter matters.
-		empType := ""
-		if strings.EqualFold(j.EmploymentType, "intern") {
-			empType = "Intern"
-		}
 		out = append(out, Job{
 			Company:    c.Name,
 			ID:         j.ID,
@@ -337,7 +333,6 @@ func fetchSnap(c Company) ([]Job, error) {
 			Location:   loc,
 			URL:        j.AbsoluteURL,
 			Department: j.Departments,
-			EmpType:    empType,
 		})
 	}
 	return out, nil
@@ -504,14 +499,13 @@ func notify(webhook string, j Job) error {
 	// one — same colour as plain text on most themes, so it gets missed. Repeat
 	// it as an explicit masked link so there is something obviously clickable.
 	desc += fmt.Sprintf("\n\n**[Apply →](%s)**", j.URL)
-	// @everyone only pings from "content" — inside an embed it renders as inert
-	// text. allowed_mentions is set explicitly because a webhook that omits it
-	// inherits whatever the channel default is; naming "everyone" makes the
-	// behaviour independent of how the webhook happens to be configured.
+	// No @everyone. It was fine at ~15 new-grad matches; with internships the
+	// steady state is ~38 and a burst pings the whole server for roles most of
+	// it does not care about. allowed_mentions stays, set to nothing, so a job
+	// title that happens to contain "@everyone" can never ping either.
 	payload := map[string]any{
-		"content": "@everyone",
 		"allowed_mentions": map[string]any{
-			"parse": []string{"everyone"},
+			"parse": []string{},
 		},
 		"embeds": []map[string]any{{
 			"title":       j.Title,
@@ -571,9 +565,6 @@ func inScope(seg string) bool {
 
 func matches(j Job) bool {
 	if !locOK(j.Location) {
-		return false
-	}
-	if strings.EqualFold(j.EmpType, "intern") {
 		return false
 	}
 	if notRe.MatchString(j.Title) {

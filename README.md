@@ -1,7 +1,8 @@
-# jobwatch — new grad job alerter
+# jobwatch — new grad & internship alerter
 
 Polls company ATS boards every 4 minutes, pings Discord when a **software
-engineering new grad** role opens anywhere in the **US or Canada**. Runs on a
+engineering new grad or internship** role opens anywhere in the **US or
+Canada**. Runs on a
 Fly.io machine for ~$2/month.
 
 A full cycle across the 83 boards scans ~12,000 postings in **58–105 seconds**,
@@ -70,8 +71,7 @@ A job has to clear four gates in `matches()` (`main.go`). All four, or no alert:
 | Gate | What it does |
 |---|---|
 | `locOK()` | anywhere in the US or Canada — i.e. **not** pinned somewhere else. See below |
-| `EmpType != "Intern"` | Ashby/Lever report employment type structurally |
-| `notRe` | drops interns, fellowships, recruiters, sales, ops, PhD, and anything senior/staff/lead |
+| `notRe` | drops fellowships, recruiters, sales, ops, PhD, and anything senior/staff/lead |
 | (`earlyRe` or `earlyDeptRe`) + (`sweRe` or `engDeptRe`) | early-career **and** software engineering |
 
 The last one is the important pair. Seniority and role-type are *separate*
@@ -130,13 +130,16 @@ Built against a 38-case table of real location strings, including
 | ATS | Department | Employment type |
 |---|---|---|
 | Greenhouse | ✅ via `/departments` (the `/jobs` endpoint has none) | — |
-| Ashby | ✅ `department` / `team` | ✅ `FullTime` / `Intern` |
+| Ashby | ✅ `department` / `team` | ✅ `FullTime` / `Intern` (informational only — nothing filters on it now) |
 | Lever | ✅ `categories.department` | ✅ `commitment` |
 | Rippling | ✅ `department.name` | — |
 | Workday | ❌ none exposed — title regex only | — |
 
 Don't trust `employmentType` on its own: Notion currently tags
-`Data Science Intern (Winter 2027)` as `FullTime`. `notRe` is the backstop.
+`Data Science Intern (Winter 2027)` as `FullTime`. That mattered when interns
+were excluded; now that they are wanted, the mislabelling is harmless — the
+title still carries the signal, which is why `earlyRe` reads titles rather than
+trusting `EmpType`.
 
 ## 4. Build locally first
 
@@ -243,7 +246,10 @@ bill by pennies. The one thing that would double it is a dedicated IPv4.
   catalogue re-alerts next cycle. A posting that blips out for one cycle costs
   one duplicate alert, which is the right way round
 - One board failing (404, 500, timeout) logs and continues, never kills the cycle
-- Alerts capped at 20/cycle so a bad slug can't flood the channel
+- Alerts capped at 50/cycle so a bad slug can't flood the channel. **The
+  overflow is discarded, not deferred** — it is marked seen and never sent, so
+  the cap must stay above the real steady-state count. Letting internships in
+  took that count from 15 to ~38, which is why 20 was no longer safe
 - State written atomically after every cycle, so a restart doesn't re-alert
 - Ashby's `isListed: false` roles are skipped
 - `DISCORD_WEBHOOK` is trimmed and URL-checked at startup. A secret set from a
@@ -254,6 +260,8 @@ bill by pennies. The one thing that would double it is a dedicated IPv4.
   a cycle with nothing to send logs `0 sent, 0 retrying` either way. Run with
   `TEST_ALERT=1` after any webhook change; it is the only thing that exercises
   delivery end to end
+- Alerts do not ping `@everyone`. `allowed_mentions` is still sent, set to an
+  empty parse list, so a job title containing `@everyone` cannot ping either
 - Webhook URLs never reach the logs. `net/http` errors embed the full URL, and
   that URL is the entire credential, so `redact()` strips it before logging
 - The Discord embed carries an explicit **Apply →** link. The title is already
@@ -277,18 +285,33 @@ considered and rejected: Level 3 is not consistently entry-level across Snap's
 teams, so the rule would pull in mid-level roles for the sake of one board. If
 that ever changes, that one-line addition is all it takes.
 
+### Internships are in scope
+
+Interns were originally a hard exclude on three separate gates: an `EmpType`
+check, and `intern|internship|co-op` inside `notRe`. All three are gone, and
+`intern|internship|co-op` moved into `earlyRe` — an internship *is* an
+early-career signal, so it belongs on that axis rather than the exclusion one.
+
+`\bphd\b` stays in `notRe`: PhD internships are a different pipeline.
+
+The volume change is the thing to watch. Matches went from 15 to ~38, which is
+what forced `maxPerCycle` up from 20 — see the cap note above. It is also why
+alerts no longer ping `@everyone`: at 15 new-grad roles a server-wide ping was
+reasonable, at ~38 including internships it is not.
+
 ### What the early-career gate actually keys on
 
-`earlyRe` reads the **title** and nothing else, matching one of: `new grad`,
+`earlyRe` reads the **title** and nothing else, matching one of: `intern`,
+`internship`, `co-op`, `new grad`,
 `graduate program/role`, `university graduate/hire`, `new college grad`,
 `early career`, `early in career`, `entry level`, `campus hire`, `recent grad`,
 `class of 20NN`, or a trailing level marker (`Software Engineer I`, `SWE 1` —
 the trailing `\b` correctly rejects `II` and `III`).
 
 `earlyDeptRe` is the fallback for boards that carry the signal only in the
-**department**: Coinbase files new grad roles under *"Internships & Emerging
-Talent Positions"* with titles as plain as `Software Engineer`. The intern gates
-still apply, so the internships sitting in that same department stay filtered.
+**department**: Coinbase files early-career roles under *"Internships & Emerging
+Talent Positions"* with titles as plain as `Software Engineer`, which no title
+regex would catch.
 
 **What it still misses, by design.** Measured across all 69 boards: of 704
 in-scope, non-senior engineering roles, only 13 pass. The other 691 are mostly
@@ -342,8 +365,19 @@ only 2 of 77 could ever alert. The exclusion filter accepts all of them.
 
 Known-bad, do not re-add: `lever/latch` (2 postings, one titled *"I don't see
 the right role"*), `greenhouse/linkedin` and `lever/linkedin` (sandbox data),
-`ashby/mercury` and `ashby/deel` (empty boards), `ashby/bumble` (empty — the
+`ashby/deel` (empty board), `ashby/bumble` (empty — the
 live Bumble board is `ashby/bumbleinc`).
+
+**Removed on comp, not on slug health:** `greenhouse/coupang`. The board is
+live and parses fine, but Coupang's entry level for engineers is L4 in Korea —
+levels.fyi puts it at ₩75M (~US$55K), so the postings that clear the filter are
+not roles worth being alerted about. Nothing wrong with the slug; re-add it if
+that ever changes.
+
+**A dead slug can mean the company moved, not that it is unreachable.**
+`ashby/mercury` sat on the known-bad list as an empty board. Mercury had simply
+switched ATS — it is `greenhouse/mercury`, 60 postings, 19 of them engineering.
+Re-probe the other ATSes before writing a company off for good.
 
 **Name collisions cost more time than dead slugs.** Four boards returned real
 JSON with real titles and were still the wrong company:

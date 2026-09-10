@@ -25,7 +25,6 @@
   { "name": "Airbnb",          "ats": "greenhouse",  "slug": "airbnb" },
   { "name": "Block",           "ats": "greenhouse",  "slug": "block" },
   { "name": "Cloudflare",      "ats": "greenhouse",  "slug": "cloudflare" },
-  { "name": "Coupang",         "ats": "greenhouse",  "slug": "coupang" },
   { "name": "Databricks",      "ats": "greenhouse",  "slug": "databricks" },
   { "name": "Discord",         "ats": "greenhouse",  "slug": "discord" },
   { "name": "Dropbox",         "ats": "greenhouse",  "slug": "dropbox" },
@@ -81,5 +80,6 @@
   { "name": "Instacart",       "ats": "greenhouse",  "slug": "instacart" },
   { "name": "Miovision",       "ats": "ashby",       "slug": "miovision" },
   { "name": "Benevity",        "ats": "ashby",       "slug": "benevity" },
-  { "name": "Trulioo",         "ats": "ashby",       "slug": "trulioo" }
+  { "name": "Trulioo",         "ats": "ashby",       "slug": "trulioo" },
+  { "name": "Mercury",         "ats": "greenhouse",  "slug": "mercury" }
 ]

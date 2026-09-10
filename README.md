@@ -1,14 +1,26 @@
 # jobwatch — new grad job alerter
 
 Polls company ATS boards every 4 minutes, pings Discord when a **software
-engineering new grad** role opens in NYC, SF Bay, Chicago, LA, Boston or
-Seattle. Runs on a Fly.io machine for ~$2/month.
+engineering new grad** role opens anywhere in the **US or Canada**. Runs on a
+Fly.io machine for ~$2/month.
 
-A full cycle across the 68 boards scans ~11,200 postings in ~35 seconds, using
-well under 100 MB of RSS. Against the 4-minute interval that is ~15% duty
-cycle, leaving room for roughly 150 boards before it gets tight. Past that,
-drop the 300 ms per-company stagger in `cycle()` — at 68 boards it is already
-~20s of the 35s, and it is pure sleeping.
+A full cycle across the 83 boards scans ~12,000 postings in **58–105 seconds**,
+using well under 100 MB of RSS. Against the 4-minute interval that is a 24–44%
+duty cycle.
+
+That spread is network variance, not board size, and it is worth knowing before
+you trust any single measurement. Braze returns the same 195 KB response in
+0.17s, 0.30s or 5.3s depending on cache warmth — one sampled run hit 18.4s and
+dragged the whole cycle to 105s. Meanwhile Rippling pulls 664 postings in 4.9s.
+Four consecutive full scans measured 58s, 105s, 84s and 58s.
+
+**About 25s of every cycle is deliberate sleeping** — the 300 ms per-company
+stagger in `cycle()`, which at 83 boards is 24.9s. Drop it first if cycles ever
+start crowding the interval; it buys nothing but politeness. Roughly 150 boards
+is still the practical ceiling, but at the slow end that is ~80% duty rather
+than the comfortable margin the median suggests. If a cycle ever did overrun
+the interval, `time.Ticker` drops the missed tick rather than queueing, so it
+degrades into polling less often instead of falling behind forever.
 
 **Workday is the exception.** It hard-caps pages at 20 postings (`limit: 50+`
 returns zero), so Salesforce alone was 73 requests and 160 seconds — 93% of the
@@ -57,7 +69,7 @@ A job has to clear four gates in `matches()` (`main.go`). All four, or no alert:
 
 | Gate | What it does |
 |---|---|
-| `locOK()` | one of six target metros, or remote **not pinned to another country**. See below |
+| `locOK()` | anywhere in the US or Canada — i.e. **not** pinned somewhere else. See below |
 | `EmpType != "Intern"` | Ashby/Lever report employment type structurally |
 | `notRe` | drops interns, fellowships, recruiters, sales, ops, PhD, and anything senior/staff/lead |
 | (`earlyRe` or `earlyDeptRe`) + (`sweRe` or `engDeptRe`) | early-career **and** software engineering |
@@ -73,30 +85,45 @@ Scored against a live pull of 3,772 postings, this returns exactly one job:
 That is not a bug. Genuine NYC SWE new grad reqs are rare outside the autumn
 hiring window; a filter that returns more than a handful is matching noise.
 
-### Why location takes several regexes
+### How the location gate works
 
-`locRe` used to be one pattern with `remote` in it. That silently matched
-Affirm's `Remote Spain` and `Remote Poland` postings as NYC — 4 of 6 alerts
-were European roles. `locOK()` now splits it:
+It is an **exclusion** filter, not an allowlist. With a whole continent in
+scope, enumerating acceptable cities is hopeless, while the set of places to
+rule out is finite. So `locOK()` accepts anything that does not name somewhere
+outside the US and Canada.
 
-- `cityRe` or `abbrevRe` matches a target metro → accept, done
-- not remote → reject
-- remote **and** carries a US marker (`US`, `USA`, `United States`) → accept
-- remote and names a foreign country/city → reject
-- bare `Remote` with no country → accept (US companies usually mean US-remote)
+Boards list multiple offices separated by `;` or `|`, and a role open in both
+Toronto and London is still one you can take — so **any single in-scope segment
+carries the whole posting**. `Bellevue, Washington; London, UK` is accepted on
+Bellevue.
 
-Metro abbreviations (`NYC`, `NY`, `SF`, `SEA`, `LA`) are matched
-**case-sensitively** — boards always write them uppercase, and lowercasing
-would match `sea` and `ny` inside ordinary words. `LA` is additionally checked
-against a Louisiana guard, since it is also that state's code: `SF, LA, NYC`
-is Los Angeles, `New Orleans, LA` is not. Louisiana is rejected *before* the
-remote rule too, so `Louisiana - Remote` does not sneak in as generic
-US-remote — but a posting listing both (`New Orleans, LA; New York, NY`)
-still matches on the target metro.
+This puts all the weight on `foreignRe`. It used to run only on remote postings
+(it existed because Affirm's `Remote Spain` and `Remote Poland` were being read
+as NYC), so a short list was fine. It is now the *only* location gate, and
+anything it misses is a false positive — hence the much longer country and city
+list in `main.go`.
 
-Built against a 29-case table of real location strings, including
-`US-Remote; Canada-Remote` (accept), `Taiwan - Remote` (reject) and
-`Palo Alto, CA` (reject — California is not the filter, San Francisco is).
+**Ambiguous names are the whole difficulty.** These cities are deliberately
+*absent* from `foreignRe` because a US or Canadian city shares the name:
+Cambridge, Birmingham, Manchester, Bristol, Naples, Athens, Lima, Rome,
+Victoria, Hamilton, Waterloo, Windsor. Their countries are listed instead, so
+`Naples, Italy` is still rejected while `Naples, FL` is kept.
+
+`London` is the exception that needed real handling, since London, Ontario is
+Canadian: it is rejected unless an Ontario marker (`Ontario`, `, ON`) sits
+alongside. That is the same shape as the `LA`/Louisiana guard the old
+six-metro filter needed — ambiguity in place names is not a one-off.
+
+`\bindia\b` not matching `Indiana` is load-bearing, and comes free from the
+word boundary — StackAdapt posts `Indiana; Michigan; Ohio; West Virginia`.
+
+An empty location is **accepted**: every board here belongs to a US or Canadian
+company, so "unspecified" is far more often in scope than not.
+
+Built against a 38-case table of real location strings, including
+`Remote (United States | Canada)` (accept), `Canada; United States` (accept),
+`London, Ontario` (accept), `India Hub - Remote` (reject) and
+`Remote (LATAM)` (reject).
 
 **Where the metadata comes from:**
 
@@ -198,12 +225,12 @@ pushing, use the workflow's **Run workflow** button (`workflow_dispatch`).
 | Outbound bandwidth (~1.4 GiB) | ~$0.03 |
 | **Total** | **~$2.20** |
 
-Measured at 68 boards on a 4-minute interval: 54 MiB pulled per cycle, about
+Measured at 83 boards on a 4-minute interval: 54 MiB pulled per cycle, about
 572 GiB/month — but **inbound transfer is free on Fly**, and outbound is only
 request headers plus the occasional Discord POST.
 
 Neither polling frequency nor company count moves this much; you pay for the
-machine being on, not for what it does. Going from 8 to 68 boards changed the
+machine being on, not for what it does. Going from 8 to 83 boards changed the
 bill by pennies. The one thing that would double it is a dedicated IPv4.
 
 ## Gotchas already handled
@@ -247,8 +274,8 @@ the trailing `\b` correctly rejects `II` and `III`).
 Talent Positions"* with titles as plain as `Software Engineer`. The intern gates
 still apply, so the internships sitting in that same department stay filtered.
 
-**What it still misses, by design.** Measured across all 68 boards: of 704
-in-metro, non-senior engineering roles, only 13 pass. The other 691 are mostly
+**What it still misses, by design.** Measured across all 69 boards: of 704
+in-scope, non-senior engineering roles, only 13 pass. The other 691 are mostly
 bare `Software Engineer`, `Software Engineer, Backend`, `Site Reliability
 Engineer` — titles where seniority lives in the description, not the name.
 Widening further means accepting false positives, because an unqualified
@@ -267,7 +294,7 @@ Two live examples of why the gate stays narrow:
 
 ## Adding companies
 
-Cycle time is not the limit — 68 boards scan 11,200 postings in ~35s, well
+Cycle time is not the limit — 83 boards scan 12,000 postings in 58–105s, still
 inside the 4-minute interval. The limit is **slug rot**,
 and it is silent. Of 21 candidate slugs probed, 2 returned `200 OK` with
 `{"jobs":[]}`: a dead slug is indistinguishable from a quiet day unless you
@@ -292,10 +319,29 @@ curl -s "https://<careers-host>/api/jobs" | jq -r '.body[0]._source.title'   # s
 
 If that prints a plausible job title, the slug is good.
 
+**Country-level locations used to be a silent miss**, and were the reason the
+six-metro filter was dropped. StackAdapt files 65 of its 77 roles as
+`"Canada; United States"` — no city, no `remote` — so under the old allowlist
+only 2 of 77 could ever alert. The exclusion filter accepts all of them.
+
 Known-bad, do not re-add: `lever/latch` (2 postings, one titled *"I don't see
 the right role"*), `greenhouse/linkedin` and `lever/linkedin` (sandbox data),
 `ashby/mercury` and `ashby/deel` (empty boards), `ashby/bumble` (empty — the
 live Bumble board is `ashby/bumbleinc`).
+
+**Name collisions cost more time than dead slugs.** Four boards returned real
+JSON with real titles and were still the wrong company:
+
+- `ashby/lightspeed` — 4 postings out of Northbrook, IL. Lightspeed *Commerce*
+  (Montreal, 142 postings) is `ashby/lightspeedhq`.
+- `ashby/maple` — New York HQ, not the Toronto telehealth company.
+- `greenhouse/ritual` — lists `Smart Contract Engineer`; the crypto company,
+  not the Toronto one.
+- `ashby/sanctuary` — 6 postings led by `Civil Engineer`, not Sanctuary AI.
+
+Checking the **location distribution** catches these faster than reading
+titles: a Montreal company whose postings are all in Illinois is not your
+company.
 
 Most large tech companies aren't reachable this way at all — Google, Apple,
 Microsoft, Meta, Amazon, Oracle, Uber, Tesla and Netflix returned nothing on

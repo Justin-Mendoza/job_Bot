@@ -52,22 +52,45 @@ var (
 	// axis 3 — hard excludes: interns, recruiting, sales, ops, and anything senior
 	notRe = regexp.MustCompile(`(?i)\bintern\b|internship|\bco.?op\b|fellowship|\bfellow\b|recruit|talent acquisition|\bsales\b|business development|account exec|marketing|\bphd\b|apprentice|program manager|head of|director|\bmanager\b|principal|\bstaff\b|senior|\bsr\.?\b|\blead\b`)
 
-	// Location is free text and wildly inconsistent, so it takes several
-	// regexes. Target metros: NYC, SF Bay, Chicago, LA, Boston, Seattle.
-	cityRe = regexp.MustCompile(`(?i)new york|san francisco|bay area|chicago|los angeles|boston|seattle`)
-	// Metro abbreviations are case-SENSITIVE: boards write them uppercase
-	// ("SF, NYC", "NYC, SEA"). Lowercasing would match "sea"/"ny" inside
-	// ordinary words.
-	abbrevRe = regexp.MustCompile(`\b(NYC|NY|SF|SEA)\b`)
-	// "LA" is ambiguous — it is also the state code for Louisiana. Accept it
-	// only when no Louisiana city or the state name appears alongside it.
-	laRe        = regexp.MustCompile(`\bLA\b`)
-	louisianaRe = regexp.MustCompile(`(?i)\b(louisiana|new orleans|baton rouge|shreveport|lake charles|metairie)\b`)
-	// "remote" alone is not enough: Affirm posts "Remote Spain" and "Remote
-	// Poland", which a naive match treats as local.
-	remoteRe  = regexp.MustCompile(`(?i)\bremote\b`)
-	usRe      = regexp.MustCompile(`(?i)\b(us|usa|u\.s\.|united states)\b`)
-	foreignRe = regexp.MustCompile(`(?i)\b(spain|poland|india|ireland|germany|france|uk|united kingdom|canada|brazil|mexico|singapore|japan|australia|netherlands|portugal|romania|israel|italy|sweden|switzerland|china|korea|taiwan|emea|apac|latam|london|dublin|berlin|paris|toronto|vancouver|bangalore|tokyo|sydney|amsterdam|lisbon|bucharest|barcelona|madrid|warsaw|tel aviv|seoul|milan|gurugram)\b`)
+	// Location is free text and wildly inconsistent. Scope is the US and Canada,
+	// so the gate is exclusion-based: accept anything that does not name a place
+	// outside them. This inverts the old six-metro allowlist — with a whole
+	// continent in scope, enumerating acceptable cities is hopeless, while the
+	// set of places to rule out is finite.
+	//
+	// foreignRe is now load-bearing. It used to run only on remote postings
+	// ("Remote Spain"), so a short list was fine; it is now the only location
+	// gate, and anything it misses is a false positive.
+	foreignRe = regexp.MustCompile(`(?i)\b(` +
+		// countries and regions
+		`spain|poland|india|ireland|germany|france|uk|united kingdom|england|scotland|wales|` +
+		`brazil|mexico|singapore|japan|australia|new zealand|netherlands|portugal|romania|` +
+		`israel|italy|sweden|switzerland|china|korea|taiwan|philippines|vietnam|thailand|` +
+		`indonesia|malaysia|argentina|colombia|chile|peru|egypt|nigeria|kenya|south africa|` +
+		`africa|uae|qatar|saudi|turkey|greece|norway|denmark|finland|belgium|austria|czechia|` +
+		`czech|hungary|bulgaria|croatia|serbia|ukraine|estonia|latvia|lithuania|iceland|` +
+		`luxembourg|malta|cyprus|hong kong|pakistan|bangladesh|sri lanka|morocco|russia|` +
+		`slovakia|slovenia|emea|apac|latam|mena|` +
+		// cities. Deliberately omitted because a US or Canadian city shares the
+		// name: Cambridge, Birmingham, Manchester, Bristol, Naples, Athens,
+		// Lima, Rome, Victoria, Hamilton, Waterloo, Windsor.
+		`dublin|berlin|paris|bangalore|bengaluru|tokyo|osaka|sydney|melbourne|brisbane|perth|` +
+		`auckland|wellington|amsterdam|lisbon|porto|bucharest|barcelona|madrid|valencia|` +
+		`seville|warsaw|krakow|gdansk|wroclaw|tel aviv|jerusalem|haifa|seoul|milan|gurugram|` +
+		`gurgaon|mumbai|delhi|noida|hyderabad|pune|chennai|kolkata|manila|jakarta|bangkok|` +
+		`kuala lumpur|ho chi minh|hanoi|zurich|geneva|munich|frankfurt|hamburg|cologne|` +
+		`stuttgart|dusseldorf|stockholm|copenhagen|oslo|helsinki|brussels|vienna|prague|` +
+		`budapest|sofia|belgrade|kyiv|kiev|riga|tallinn|vilnius|cairo|lagos|nairobi|` +
+		`johannesburg|cape town|shanghai|shenzhen|beijing|guangzhou|taipei|dubai|abu dhabi|` +
+		`doha|riyadh|istanbul|ankara|sao paulo|rio de janeiro|buenos aires|santiago|bogota|` +
+		`edinburgh|glasgow|leeds|belfast|cork|galway` +
+		`)\b`)
+	// "London" is ambiguous: London, Ontario is Canadian. Treat it as foreign
+	// unless an Ontario marker sits alongside it — the same shape as the old
+	// LA/Louisiana guard, which the six-metro filter needed for exactly this
+	// reason.
+	londonRe  = regexp.MustCompile(`(?i)\blondon\b`)
+	ontarioRe = regexp.MustCompile(`(?i)\bontario\b|,\s*on\b`)
 )
 
 const (
@@ -471,7 +494,15 @@ func notify(webhook string, j Job) error {
 	// one — same colour as plain text on most themes, so it gets missed. Repeat
 	// it as an explicit masked link so there is something obviously clickable.
 	desc += fmt.Sprintf("\n\n**[Apply →](%s)**", j.URL)
+	// @everyone only pings from "content" — inside an embed it renders as inert
+	// text. allowed_mentions is set explicitly because a webhook that omits it
+	// inherits whatever the channel default is; naming "everyone" makes the
+	// behaviour independent of how the webhook happens to be configured.
 	payload := map[string]any{
+		"content": "@everyone",
+		"allowed_mentions": map[string]any{
+			"parse": []string{"everyone"},
+		},
 		"embeds": []map[string]any{{
 			"title":       j.Title,
 			"url":         j.URL,
@@ -495,29 +526,34 @@ func notify(webhook string, j Job) error {
 // ---------- main ----------
 
 // matches keeps a job only if it is an early-career software engineering role
-// in NYC. Structured board metadata wins where it exists; the title regexes
-// are the fallback for boards that expose nothing (workday) and the backstop
-// for boards where companies fill the fields in wrong (Notion tags some
-// interns as FullTime).
-// locOK accepts any target metro outright. A remote role counts only when it
-// is not pinned to another country — "Remote, US" yes, "Remote Spain" no,
-// bare "Remote" yes (US companies usually mean US-remote).
+// in the US or Canada. Structured board metadata wins where it exists; the
+// title regexes are the fallback for boards that expose nothing (workday) and
+// the backstop for boards where companies fill the fields in wrong (Notion
+// tags some interns as FullTime).
+
+// locOK accepts a posting anywhere in the US or Canada. Boards list multiple
+// offices separated by ";" or "|", and a role open in both Toronto and London
+// is still one you can take, so a single in-scope segment carries the posting.
+// An empty location is accepted: every board here belongs to a US or Canadian
+// company, so "unspecified" is far more often in scope than not.
 func locOK(loc string) bool {
-	if cityRe.MatchString(loc) || abbrevRe.MatchString(loc) {
-		return true
+	for _, seg := range strings.FieldsFunc(loc, func(r rune) bool { return r == ';' || r == '|' }) {
+		if inScope(seg) {
+			return true
+		}
 	}
-	if laRe.MatchString(loc) && !louisianaRe.MatchString(loc) {
-		return true
+	// FieldsFunc returns nothing for an empty or separator-only string.
+	return strings.TrimSpace(loc) == ""
+}
+
+func inScope(seg string) bool {
+	if londonRe.MatchString(seg) && ontarioRe.MatchString(seg) {
+		return true // London, Ontario
 	}
-	// Louisiana is never a target metro. Checked before the remote rule so
-	// "Louisiana - Remote" cannot slip through as a generic US-remote role.
-	if louisianaRe.MatchString(loc) {
+	if londonRe.MatchString(seg) {
 		return false
 	}
-	if !remoteRe.MatchString(loc) {
-		return false
-	}
-	return usRe.MatchString(loc) || !foreignRe.MatchString(loc)
+	return !foreignRe.MatchString(seg)
 }
 
 func matches(j Job) bool {

@@ -66,5 +66,20 @@
   { "name": "Kalshi",          "ats": "ashby",       "slug": "kalshi" },
   { "name": "Polymarket",      "ats": "ashby",       "slug": "polymarket" },
   { "name": "Bumble",          "ats": "ashby",       "slug": "bumbleinc" },
-  { "name": "Snap",            "ats": "snap",        "slug": "careers.snap.com" }
+  { "name": "Snap",            "ats": "snap",        "slug": "careers.snap.com" },
+  { "name": "StackAdapt",      "ats": "greenhouse",  "slug": "stackadapt" },
+  { "name": "Wealthsimple",    "ats": "ashby",       "slug": "wealthsimple" },
+  { "name": "1Password",       "ats": "ashby",       "slug": "1password" },
+  { "name": "PointClickCare",  "ats": "lever",       "slug": "pointclickcare" },
+  { "name": "Waabi",           "ats": "lever",       "slug": "waabi" },
+  { "name": "Lightspeed",      "ats": "ashby",       "slug": "lightspeedhq" },
+  { "name": "Jobber",          "ats": "ashby",       "slug": "jobber" },
+  { "name": "D2L",             "ats": "greenhouse",  "slug": "d2l" },
+  { "name": "AlayaCare",       "ats": "greenhouse",  "slug": "alayacare" },
+  { "name": "Hopper",          "ats": "ashby",       "slug": "hopper" },
+  { "name": "Jane",            "ats": "ashby",       "slug": "jane" },
+  { "name": "Instacart",       "ats": "greenhouse",  "slug": "instacart" },
+  { "name": "Miovision",       "ats": "ashby",       "slug": "miovision" },
+  { "name": "Benevity",        "ats": "ashby",       "slug": "benevity" },
+  { "name": "Trulioo",         "ats": "ashby",       "slug": "trulioo" }
 ]

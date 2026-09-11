@@ -81,5 +81,7 @@
   { "name": "Miovision",       "ats": "ashby",       "slug": "miovision" },
   { "name": "Benevity",        "ats": "ashby",       "slug": "benevity" },
   { "name": "Trulioo",         "ats": "ashby",       "slug": "trulioo" },
-  { "name": "Mercury",         "ats": "greenhouse",  "slug": "mercury" }
+  { "name": "Mercury",         "ats": "greenhouse",  "slug": "mercury" },
+  { "name": "CoreWeave",       "ats": "greenhouse",  "slug": "coreweave" },
+  { "name": "Clio",            "ats": "workday",     "slug": "clio/wd3/ClioCareerSite" }
 ]

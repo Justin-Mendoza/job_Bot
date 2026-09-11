@@ -105,7 +105,7 @@ const (
 	// not deferred — at 20 the first cycle after that change would have marked
 	// ~18 real internships seen without ever alerting on them.
 	maxPerCycle  = 50
-	pollInterval = 4 * time.Minute // a full cycle is 58-105s at 83 boards
+	pollInterval = 4 * time.Minute // a full cycle is ~67s at 107 boards
 )
 
 var statePath = envOr("STATE_PATH", "/data/seen.json")

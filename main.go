@@ -394,7 +394,10 @@ func fetchWorkday(c Company) ([]Job, error) {
 				ID:       j.ExternalPath,
 				Title:    j.Title,
 				Location: j.LocationsText,
-				URL:      base + j.ExternalPath,
+				// externalPath is site-relative ("/job/Toronto/Foo_REQ-1"), so
+				// the site segment has to go back in. Without it every link is
+				// a 404 — the host alone does not resolve a posting.
+				URL: base + "/" + site + j.ExternalPath,
 			})
 		}
 		if len(page.JobPostings) < pageSize {

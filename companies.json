@@ -105,5 +105,12 @@
   { "name": "Cerebras",        "ats": "ashby",       "slug": "cerebras" },
   { "name": "Replit",          "ats": "ashby",       "slug": "replit" },
   { "name": "Neuralink",       "ats": "greenhouse",  "slug": "neuralink" },
-  { "name": "Profound",        "ats": "ashby",       "slug": "profound" }
+  { "name": "Profound",        "ats": "ashby",       "slug": "profound" },
+  { "name": "Via",             "ats": "greenhouse",  "slug": "via" },
+  { "name": "Gusto",           "ats": "greenhouse",  "slug": "gusto" },
+  { "name": "Reddit",          "ats": "greenhouse",  "slug": "reddit" },
+  { "name": "SoFi",            "ats": "greenhouse",  "slug": "sofi" },
+  { "name": "Duolingo",        "ats": "greenhouse",  "slug": "duolingo" },
+  { "name": "Faire",           "ats": "greenhouse",  "slug": "faire" },
+  { "name": "GitLab",          "ats": "greenhouse",  "slug": "gitlab" }
 ]

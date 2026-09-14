@@ -39,6 +39,7 @@ jobs:
       - name: gofmt
         run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
       - run: go vet ./...
+      - run: go test ./...
       - run: go build -o /dev/null .
 
   deploy:

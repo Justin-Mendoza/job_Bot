@@ -66,6 +66,29 @@ careers URL:
 
 ## 3. Tune the filters
 
+Cohere and Harvey have a recall-first exception: software, research-engineering,
+forward-deployed-engineering, inference-engineering and Member of Technical Staff
+roles without an explicit early-career label also alert, marked **Verify level**.
+These are possible opportunities, not confirmed new-grad roles; experienced roles
+with unqualified titles will also appear. Explicit senior titles remain excluded;
+the phrase “Member of Technical Staff” itself is not treated as a senior level.
+Ashby secondary locations are checked as well as the primary location.
+The 50-alert cap now defers overflow to later cycles instead of discarding it.
+These rules supersede the older narrow-filter and discarded-overflow notes below.
+
+The September 14, 2026 [all-board audit](AUDIT.md) also added junior/Jr,
+associate, graduate and engineer/developer I/1 titles **when the title itself
+identifies software work**. Software Test Developer titles are recognized.
+Ashby/Lever internship employment types and both department and team metadata
+now contribute early-career signals; FullTime never overrides an intern title.
+Greenhouse retains all departments for jobs listed more than once, and Lever
+retains all locations. Unlabeled roles at other companies are still ambiguous:
+descriptions are not classified, and Snap Level 3 is still excluded.
+
+Run the read-only audit with
+`JOBWATCH_AUDIT=/tmp/jobwatch-audit.json go test -run TestLiveBoardAudit -v -count=1 .`.
+It never sends Discord alerts or changes seen state. Normal tests need no network.
+
 A job has to clear four gates in `matches()` (`main.go`). All four, or no alert:
 
 | Gate | What it does |

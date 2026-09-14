@@ -24,30 +24,32 @@ type Company struct {
 }
 
 type Job struct {
-	Company    string
-	ID         string
-	Title      string
-	Location   string
-	URL        string
-	Department string // "" when the board doesn't expose one (workday)
+	Company        string
+	ID             string
+	Title          string
+	Location       string
+	URL            string
+	Department     string // "" when the board doesn't expose one (workday)
+	EmploymentType string
+	ReviewLevel    bool // priority-board role with no explicit early-career signal
 }
 
 func (j Job) Key() string { return j.Company + ":" + j.ID }
 
 var (
 	// axis 1 — is this early-career? Title first.
-	// "associate"/"junior" are deliberately NOT here: on real boards they are
-	// mostly seniority-neutral business titles (Associate General Counsel), and
-	// adding them let senior non-eng roles through the engDeptRe fallback.
+	// Junior/associate/level-I are handled separately, requiring a software
+	// title so business roles cannot enter through the department fallback.
 	earlyRe = regexp.MustCompile(`(?i)\bintern\b|internship|\bco.?op\b|\bnew.?grad|\bgrad(uate)?\s+(program|role|opportunit)|university\s+(grad|hire)|new\s+college\s+grad|early.?career|early\s+in\s+career|entry.?level|campus\s+hire|recent\s+grad|class\s+of\s+20\d\d|software engineer\s*(i|1)\b|swe\s*(i|1)\b`)
 	// axis 1b — department fallback. Some boards carry the early-career signal
 	// only in the department: Coinbase files new grad roles under "Internships &
 	// Emerging Talent Positions" with a title as plain as "Software Engineer".
 	// Internships in that department are wanted too, so nothing extra is
 	// needed to let them through.
-	earlyDeptRe = regexp.MustCompile(`(?i)emerging\s+talent|early\s+career|new\s+grad|university\s+(recruit|program|hir)|campus\s+(recruit|hir)`)
+	earlyDeptRe   = regexp.MustCompile(`(?i)emerging\s+talent|early\s+career|new\s+grad|university\s+(recruit|program|hir)|campus\s+(recruit|hir)|\binternships?\b|\bco[ -]?ops?\b`)
+	juniorTitleRe = regexp.MustCompile(`(?i)\b(junior|jr\.?|associate|graduate)\b|\b(engineer|developer)\s+(i|1)\b`)
 	// axis 2 — is this actually software engineering?
-	sweRe = regexp.MustCompile(`(?i)software\s+eng|software\s+dev|\bswe\b|backend|back.end|frontend|front.end|full.?stack|infrastructure eng|platform eng|systems eng|security eng|machine learning eng|\bml\s+eng|android eng|ios eng|mobile eng|site reliability|\bsre\b`)
+	sweRe = regexp.MustCompile(`(?i)software\s+eng|software\s+(test\s+)?dev|\bswe\b|backend|back.end|frontend|front.end|full.?stack|infrastructure eng|platform eng|systems eng|security eng|machine learning eng|\bml\s+eng|android eng|ios eng|mobile eng|site reliability|\bsre\b|research engineer`)
 	// axis 2b — department fallback, for eng titles with no role keyword
 	engDeptRe = regexp.MustCompile(`(?i)engineer|software|infrastructure|platform|developer|technology`)
 	// axis 3 — hard excludes: recruiting, sales, ops, PhD, and anything senior
@@ -142,13 +144,14 @@ func fetchGreenhouse(c Company) ([]Job, error) {
 		return nil, err
 	}
 	var out []Job
-	seen := map[int64]bool{} // a job can be listed under more than one department
+	seen := map[int64]int{} // retain metadata from every department of a job
 	for _, d := range body.Departments {
 		for _, j := range d.Jobs {
-			if seen[j.ID] {
+			if index, ok := seen[j.ID]; ok {
+				out[index].Department += "; " + d.Name
 				continue
 			}
-			seen[j.ID] = true
+			seen[j.ID] = len(out)
 			out = append(out, Job{
 				Company:    c.Name,
 				ID:         fmt.Sprint(j.ID),
@@ -169,10 +172,11 @@ func fetchLever(c Company) ([]Job, error) {
 		Text       string `json:"text"`
 		HostedURL  string `json:"hostedUrl"`
 		Categories struct {
-			Location   string `json:"location"`
-			Department string `json:"department"`
-			Team       string `json:"team"`
-			Commitment string `json:"commitment"`
+			Location     string   `json:"location"`
+			Department   string   `json:"department"`
+			Team         string   `json:"team"`
+			Commitment   string   `json:"commitment"`
+			AllLocations []string `json:"allLocations"`
 		} `json:"categories"`
 	}
 	if err := getJSON(url, &body); err != nil {
@@ -180,17 +184,19 @@ func fetchLever(c Company) ([]Job, error) {
 	}
 	out := make([]Job, 0, len(body))
 	for _, j := range body {
-		dept := j.Categories.Department
-		if dept == "" {
-			dept = j.Categories.Team
+		dept := strings.Join([]string{j.Categories.Department, j.Categories.Team}, "; ")
+		loc := j.Categories.Location
+		if len(j.Categories.AllLocations) > 0 {
+			loc = strings.Join(append([]string{loc}, j.Categories.AllLocations...), "; ")
 		}
 		out = append(out, Job{
-			Company:    c.Name,
-			ID:         j.ID,
-			Title:      j.Text,
-			Location:   j.Categories.Location,
-			URL:        j.HostedURL,
-			Department: dept,
+			Company:        c.Name,
+			ID:             j.ID,
+			Title:          j.Text,
+			Location:       loc,
+			URL:            j.HostedURL,
+			Department:     dept,
+			EmploymentType: j.Categories.Commitment,
 		})
 	}
 	return out, nil
@@ -200,14 +206,17 @@ func fetchAshby(c Company) ([]Job, error) {
 	url := fmt.Sprintf("https://api.ashbyhq.com/posting-api/job-board/%s", c.Slug)
 	var body struct {
 		Jobs []struct {
-			ID             string `json:"id"`
-			Title          string `json:"title"`
-			Location       string `json:"location"`
-			JobURL         string `json:"jobUrl"`
-			IsListed       bool   `json:"isListed"`
-			Department     string `json:"department"`
-			Team           string `json:"team"`
-			EmploymentType string `json:"employmentType"`
+			ID                 string `json:"id"`
+			Title              string `json:"title"`
+			Location           string `json:"location"`
+			JobURL             string `json:"jobUrl"`
+			IsListed           bool   `json:"isListed"`
+			Department         string `json:"department"`
+			Team               string `json:"team"`
+			EmploymentType     string `json:"employmentType"`
+			SecondaryLocations []struct {
+				Location string `json:"location"`
+			} `json:"secondaryLocations"`
 		} `json:"jobs"`
 	}
 	if err := getJSON(url, &body); err != nil {
@@ -218,17 +227,21 @@ func fetchAshby(c Company) ([]Job, error) {
 		if !j.IsListed {
 			continue
 		}
-		dept := j.Department
-		if dept == "" {
-			dept = j.Team
+		dept := strings.Join([]string{j.Department, j.Team}, "; ")
+		locations := []string{j.Location}
+		for _, secondary := range j.SecondaryLocations {
+			if secondary.Location != "" {
+				locations = append(locations, secondary.Location)
+			}
 		}
 		out = append(out, Job{
-			Company:    c.Name,
-			ID:         j.ID,
-			Title:      j.Title,
-			Location:   j.Location,
-			URL:        j.JobURL,
-			Department: dept,
+			Company:        c.Name,
+			ID:             j.ID,
+			Title:          j.Title,
+			Location:       strings.Join(locations, "; "),
+			URL:            j.JobURL,
+			Department:     dept,
+			EmploymentType: j.EmploymentType,
 		})
 	}
 	return out, nil
@@ -495,6 +508,9 @@ func redact(err error, secret string) error {
 
 func notify(webhook string, j Job) error {
 	desc := fmt.Sprintf("**%s** · %s", j.Company, j.Location)
+	if j.ReviewLevel {
+		desc += "\nVerify level: this role is not explicitly labeled early-career."
+	}
 	if j.Department != "" {
 		desc += fmt.Sprintf("\n%s", j.Department)
 	}
@@ -570,13 +586,41 @@ func matches(j Job) bool {
 	if !locOK(j.Location) {
 		return false
 	}
-	if notRe.MatchString(j.Title) {
+	title := j.Title
+	if priorityBoard(j) {
+		// Member of Technical Staff is a role family at Cohere, not a staff level.
+		title = technicalStaffRe.ReplaceAllString(title, "technical contributor")
+	}
+	if notRe.MatchString(title) {
 		return false
 	}
-	if !earlyRe.MatchString(j.Title) && !earlyDeptRe.MatchString(j.Department) {
-		return false
+	if !earlyCareer(j) {
+		return priorityEngineering(j)
 	}
-	return sweRe.MatchString(j.Title) || engDeptRe.MatchString(j.Department)
+	return sweRe.MatchString(j.Title) || engDeptRe.MatchString(j.Department) || priorityEngineering(j)
+}
+
+func earlyCareer(j Job) bool {
+	return earlyRe.MatchString(j.Title) || earlyDeptRe.MatchString(j.Department) ||
+		(sweRe.MatchString(j.Title) && juniorTitleRe.MatchString(j.Title)) ||
+		strings.EqualFold(j.EmploymentType, "Intern") ||
+		strings.EqualFold(j.EmploymentType, "Internship") ||
+		strings.EqualFold(j.EmploymentType, "Co-op")
+}
+
+var technicalStaffRe = regexp.MustCompile(`(?i)\bmember of technical staff\b`)
+var priorityRoleRe = regexp.MustCompile(`(?i)\bresearch engineer\b|\bforward deployed engineer\b|\binference engineer\b`)
+
+func priorityBoard(j Job) bool {
+	return strings.EqualFold(j.Company, "Cohere") || strings.EqualFold(j.Company, "Harvey")
+}
+
+// These boards often omit levels. Alert for review rather than silently assume
+// a plain engineering title cannot accept graduates. Explicit senior titles
+// and location exclusions still apply in matches.
+func priorityEngineering(j Job) bool {
+	return priorityBoard(j) && (sweRe.MatchString(j.Title) ||
+		technicalStaffRe.MatchString(j.Title) || priorityRoleRe.MatchString(j.Title))
 }
 
 func cycle(companies []Company, seen map[string]bool, seeded bool, webhook string) {
@@ -609,6 +653,7 @@ func cycle(companies []Company, seen map[string]bool, seeded bool, webhook strin
 			if !matches(j) || seen[j.Key()] {
 				continue
 			}
+			j.ReviewLevel = !earlyCareer(j)
 			fresh = append(fresh, j)
 		}
 		time.Sleep(300 * time.Millisecond) // stagger
@@ -625,13 +670,9 @@ func cycle(companies []Company, seen map[string]bool, seeded bool, webhook strin
 		return
 	}
 
-	// Flood guard: a bad filter change could match hundreds. Drop the overflow
-	// outright rather than dribbling it into the channel for the next hour.
+	// Keep overflow unseen so the next cycle retries it instead of losing jobs.
 	if len(fresh) > maxPerCycle {
-		for _, j := range fresh[maxPerCycle:] {
-			seen[j.Key()] = true
-		}
-		log.Printf("capping %d alerts to %d, dropping %d", len(fresh), maxPerCycle, len(fresh)-maxPerCycle)
+		log.Printf("capping %d alerts to %d, deferring %d", len(fresh), maxPerCycle, len(fresh)-maxPerCycle)
 		fresh = fresh[:maxPerCycle]
 	}
 

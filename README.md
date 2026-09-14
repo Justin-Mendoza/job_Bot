@@ -1,12 +1,12 @@
 # jobwatch — new grad & internship alerter
 
-Polls company ATS boards every 4 minutes, pings Discord when a **software
+Polls company ATS boards every 3 minutes, pings Discord when a **software
 engineering new grad or internship** role opens anywhere in the **US or
 Canada**. Runs on a
 Fly.io machine for ~$2/month.
 
 A full cycle across the 83 boards scans ~12,000 postings in **58–105 seconds**,
-using well under 100 MB of RSS. Against the 4-minute interval that is a 24–44%
+using well under 100 MB of RSS. Against the 3-minute interval that is a 32–58%
 duty cycle.
 
 That spread is network variance, not board size, and it is worth knowing before
@@ -207,7 +207,7 @@ it just looks like a quiet job market. Delete the whole block. The correct
 ## 6. Confirm it's alive
 
 ```bash
-fly logs                        # should show a cycle every 4 min
+fly logs                        # should show a cycle every 3 min
 fly status
 ```
 
@@ -251,7 +251,7 @@ pushing, use the workflow's **Run workflow** button (`workflow_dispatch`).
 | Outbound bandwidth (~1.4 GiB) | ~$0.03 |
 | **Total** | **~$2.20** |
 
-Measured at 83 boards on a 4-minute interval: 54 MiB pulled per cycle, about
+Measured at 83 boards on a 3-minute interval: 54 MiB pulled per cycle, about
 572 GiB/month — but **inbound transfer is free on Fly**, and outbound is only
 request headers plus the occasional Discord POST.
 
@@ -357,7 +357,7 @@ Two live examples of why the gate stays narrow:
 ## Adding companies
 
 Cycle time is not the limit — 83 boards scan 12,000 postings in 58–105s, still
-inside the 4-minute interval. The limit is **slug rot**,
+inside the 3-minute interval. The limit is **slug rot**,
 and it is silent. Of 21 candidate slugs probed, 2 returned `200 OK` with
 `{"jobs":[]}`: a dead slug is indistinguishable from a quiet day unless you
 look. The cycle now logs `WARN ... board returned 0 jobs` for exactly this.

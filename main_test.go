@@ -1,11 +1,39 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 )
+
+func TestSupportedRequestedCompaniesAreConfigured(t *testing.T) {
+	raw, err := os.ReadFile("companies.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var companies []Company
+	if err := json.Unmarshal(raw, &companies); err != nil {
+		t.Fatal(err)
+	}
+
+	wanted := []string{
+		"Cohere", "Zip", "Cerebras", "StackAdapt", "DoorDash", "Stripe",
+		"Magical", "Waabi", "Bree", "NationGraph", "Rose Rocket", "Lyft",
+		"Okta", "Cloudflare", "MongoDB", "Robinhood",
+	}
+	configured := make(map[string]bool, len(companies))
+	for _, company := range companies {
+		configured[strings.ToLower(company.Name)] = true
+	}
+	for _, name := range wanted {
+		if !configured[strings.ToLower(name)] {
+			t.Errorf("requested company %q is not configured", name)
+		}
+	}
+}
 
 func TestPriorityMatches(t *testing.T) {
 	for _, tc := range []struct {

@@ -19,7 +19,7 @@ import (
 
 type Company struct {
 	Name string `json:"name"`
-	ATS  string `json:"ats"`  // greenhouse | lever | ashby | workday | rippling | snap
+	ATS  string `json:"ats"`  // greenhouse | lever | ashby | workable | workday | rippling | snap
 	Slug string `json:"slug"` // for workday: "tenant/wd12/SiteName"
 }
 
@@ -121,6 +121,14 @@ func envOr(k, def string) string {
 
 var client = &http.Client{Timeout: 20 * time.Second}
 
+type httpStatusError struct {
+	Code int
+}
+
+func (e *httpStatusError) Error() string {
+	return fmt.Sprintf("status %d", e.Code)
+}
+
 // ---------- adapters ----------
 
 // Greenhouse's /jobs endpoint omits departments entirely, so go through
@@ -202,6 +210,67 @@ func fetchLever(c Company) ([]Job, error) {
 	return out, nil
 }
 
+func fetchWorkable(c Company) ([]Job, error) {
+	url := fmt.Sprintf("https://apply.workable.com/api/v1/widget/accounts/%s", c.Slug)
+	var body struct {
+		Jobs []struct {
+			Title          string `json:"title"`
+			Shortcode      string `json:"shortcode"`
+			EmploymentType string `json:"employment_type"`
+			Department     string `json:"department"`
+			Function       string `json:"function"`
+			Shortlink      string `json:"shortlink"`
+			URL            string `json:"url"`
+			Telecommuting  bool   `json:"telecommuting"`
+			Locations      []struct {
+				Country string `json:"country"`
+				City    string `json:"city"`
+				Region  string `json:"region"`
+			} `json:"locations"`
+		} `json:"jobs"`
+	}
+	if err := getJSON(url, &body); err != nil {
+		return nil, err
+	}
+	out := make([]Job, 0, len(body.Jobs))
+	for _, j := range body.Jobs {
+		var locations []string
+		for _, location := range j.Locations {
+			parts := compactStrings(location.City, location.Region, location.Country)
+			if len(parts) > 0 {
+				locations = append(locations, strings.Join(parts, ", "))
+			}
+		}
+		if j.Telecommuting {
+			locations = append([]string{"Remote"}, locations...)
+		}
+		u := j.Shortlink
+		if u == "" {
+			u = j.URL
+		}
+		out = append(out, Job{
+			Company:        c.Name,
+			ID:             j.Shortcode,
+			Title:          j.Title,
+			Location:       strings.Join(locations, "; "),
+			URL:            u,
+			Department:     strings.Join(compactStrings(j.Department, j.Function), "; "),
+			EmploymentType: j.EmploymentType,
+		})
+	}
+	return out, nil
+}
+
+func compactStrings(values ...string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if value != "" {
+			out = append(out, value)
+		}
+	}
+	return out
+}
+
 func fetchAshby(c Company) ([]Job, error) {
 	url := fmt.Sprintf("https://api.ashbyhq.com/posting-api/job-board/%s", c.Slug)
 	var body struct {
@@ -220,7 +289,11 @@ func fetchAshby(c Company) ([]Job, error) {
 		} `json:"jobs"`
 	}
 	if err := getJSON(url, &body); err != nil {
-		return nil, err
+		var statusErr *httpStatusError
+		if !errors.As(err, &statusErr) || statusErr.Code != http.StatusNotFound {
+			return nil, err
+		}
+		return fetchAshbyHosted(c)
 	}
 	out := make([]Job, 0, len(body.Jobs))
 	for _, j := range body.Jobs {
@@ -241,6 +314,95 @@ func fetchAshby(c Company) ([]Job, error) {
 			Location:       strings.Join(locations, "; "),
 			URL:            j.JobURL,
 			Department:     dept,
+			EmploymentType: j.EmploymentType,
+		})
+	}
+	return out, nil
+}
+
+// Some Ashby boards, including EvenUp, publish jobs on the hosted board while
+// returning 404 from the older posting-api feed. The hosted page embeds the
+// same listing metadata in window.__appData, so use it as a narrow 404 fallback.
+func fetchAshbyHosted(c Company) ([]Job, error) {
+	url := fmt.Sprintf("https://jobs.ashbyhq.com/%s", c.Slug)
+	raw, err := getBody(url, "text/html")
+	if err != nil {
+		return nil, err
+	}
+
+	const marker = "window.__appData = "
+	start := bytes.Index(raw, []byte(marker))
+	if start == -1 {
+		return nil, errors.New("ashby hosted page missing window.__appData")
+	}
+
+	var body struct {
+		Organization struct {
+			HostedJobsPageSlug string `json:"hostedJobsPageSlug"`
+		} `json:"organization"`
+		JobBoard struct {
+			Teams []struct {
+				ID           string `json:"id"`
+				Name         string `json:"name"`
+				ParentTeamID string `json:"parentTeamId"`
+			} `json:"teams"`
+			JobPostings []struct {
+				ID                 string `json:"id"`
+				Title              string `json:"title"`
+				TeamID             string `json:"teamId"`
+				LocationName       string `json:"locationName"`
+				EmploymentType     string `json:"employmentType"`
+				SecondaryLocations []struct {
+					LocationName string `json:"locationName"`
+				} `json:"secondaryLocations"`
+			} `json:"jobPostings"`
+		} `json:"jobBoard"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw[start+len(marker):]))
+	if err := decoder.Decode(&body); err != nil {
+		return nil, fmt.Errorf("decode ashby hosted page data: %w", err)
+	}
+
+	type team struct {
+		name, parentID string
+	}
+	teams := make(map[string]team, len(body.JobBoard.Teams))
+	for _, t := range body.JobBoard.Teams {
+		teams[t.ID] = team{name: t.Name, parentID: t.ParentTeamID}
+	}
+
+	boardSlug := body.Organization.HostedJobsPageSlug
+	if boardSlug == "" {
+		boardSlug = c.Slug
+	}
+	out := make([]Job, 0, len(body.JobBoard.JobPostings))
+	for _, j := range body.JobBoard.JobPostings {
+		locations := []string{j.LocationName}
+		for _, secondary := range j.SecondaryLocations {
+			if secondary.LocationName != "" {
+				locations = append(locations, secondary.LocationName)
+			}
+		}
+
+		var departments []string
+		seenTeams := map[string]bool{}
+		for teamID := j.TeamID; teamID != "" && !seenTeams[teamID]; {
+			seenTeams[teamID] = true
+			t, ok := teams[teamID]
+			if !ok {
+				break
+			}
+			departments = append(departments, t.name)
+			teamID = t.parentID
+		}
+
+		out = append(out, Job{
+			Company:        c.Name,
+			ID:             j.ID,
+			Title:          j.Title,
+			Location:       strings.Join(locations, "; "),
+			URL:            fmt.Sprintf("https://jobs.ashbyhq.com/%s/%s", boardSlug, j.ID),
+			Department:     strings.Join(departments, "; "),
 			EmploymentType: j.EmploymentType,
 		})
 	}
@@ -429,6 +591,8 @@ func fetch(c Company) ([]Job, error) {
 		return fetchLever(c)
 	case "ashby":
 		return fetchAshby(c)
+	case "workable":
+		return fetchWorkable(c)
 	case "rippling":
 		return fetchRippling(c)
 	case "workday":
@@ -439,24 +603,32 @@ func fetch(c Company) ([]Job, error) {
 	return nil, fmt.Errorf("unknown ats %q", c.ATS)
 }
 
-func getJSON(url string, v any) error {
+func getBody(url, accept string) ([]byte, error) {
 	req, _ := http.NewRequest("GET", url, nil)
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept", accept)
 	req.Header.Set("User-Agent", "jobwatch/1.0")
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("status %d", resp.StatusCode)
+		return nil, &httpStatusError{Code: resp.StatusCode}
 	}
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if len(raw) > maxBody {
-		return fmt.Errorf("body exceeds %d MiB cap", maxBody>>20)
+		return nil, fmt.Errorf("body exceeds %d MiB cap", maxBody>>20)
+	}
+	return raw, nil
+}
+
+func getJSON(url string, v any) error {
+	raw, err := getBody(url, "application/json")
+	if err != nil {
+		return err
 	}
 	return json.Unmarshal(raw, v)
 }

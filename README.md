@@ -155,6 +155,7 @@ Built against a 38-case table of real location strings, including
 | Greenhouse | ✅ via `/departments` (the `/jobs` endpoint has none) | — |
 | Ashby | ✅ `department` / `team` | ✅ `FullTime` / `Intern` (informational only — nothing filters on it now) |
 | Lever | ✅ `categories.department` | ✅ `commitment` |
+| Workable | ✅ `department` / `function` | ✅ `employment_type` |
 | Rippling | ✅ `department.name` | — |
 | Workday | ❌ none exposed — title regex only | — |
 

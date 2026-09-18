@@ -22,7 +22,9 @@ func TestSupportedRequestedCompaniesAreConfigured(t *testing.T) {
 	wanted := []string{
 		"Cohere", "Zip", "Cerebras", "StackAdapt", "DoorDash", "Stripe",
 		"Magical", "Waabi", "Bree", "NationGraph", "Rose Rocket", "Lyft",
-		"Okta", "Cloudflare", "MongoDB", "Robinhood",
+		"Okta", "Cloudflare", "MongoDB", "Robinhood", "DoorDash Canada", "EvenUp",
+		"Cursor", "Fireworks AI", "Harvey", "Together AI", "OpenAI", "Pinecone",
+		"Baseten", "Anyscale", "CoreWeave", "Glean", "Cohere", "Hugging Face", "Anthropic",
 	}
 	configured := make(map[string]bool, len(companies))
 	for _, company := range companies {
@@ -101,6 +103,8 @@ func TestAdapterMetadata(t *testing.T) {
 			w.Write([]byte(`{"departments":[{"name":"Engineering","jobs":[{"id":1,"title":"Software Engineer"}]},{"name":"University Recruiting","jobs":[{"id":1,"title":"Software Engineer"}]}]}`))
 		case strings.Contains(r.URL.Path, "postings"):
 			w.Write([]byte(`[{"id":"1","text":"Software Engineer","categories":{"location":"London","allLocations":["London","Toronto"],"department":"Engineering","team":"University Recruiting","commitment":"Intern"}}]`))
+		case strings.Contains(r.URL.Path, "widget"):
+			w.Write([]byte(`{"jobs":[{"title":"Software Engineer","shortcode":"ABC123","employment_type":"Intern","department":"Engineering","function":"University Recruiting","shortlink":"https://apply.workable.com/j/ABC123","telecommuting":true,"locations":[{"country":"Canada","city":"Toronto","region":"Ontario"}]}]}`))
 		default:
 			w.Write([]byte(`{"jobs":[{"id":"1","title":"Software Engineer","isListed":true,"department":"Engineering","team":"University Recruiting","employmentType":"Intern"}]}`))
 		}
@@ -109,7 +113,7 @@ func TestAdapterMetadata(t *testing.T) {
 	old := client
 	client = &http.Client{Transport: rewriteTransport{server.Listener.Addr().String()}}
 	t.Cleanup(func() { client = old })
-	for _, ats := range []string{"greenhouse", "lever", "ashby"} {
+	for _, ats := range []string{"greenhouse", "lever", "ashby", "workable"} {
 		jobs, err := fetch(Company{Name: "Example", ATS: ats, Slug: "example"})
 		if err != nil || len(jobs) != 1 {
 			t.Fatalf("%s: jobs=%v err=%v", ats, jobs, err)
@@ -143,5 +147,35 @@ func TestAshbySecondaryLocation(t *testing.T) {
 	}
 	if !matches(jobs[0]) {
 		t.Fatal("secondary Canadian location should match")
+	}
+}
+
+func TestAshbyHostedPageFallback(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/posting-api/") {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(`<html><script>window.__appData = {"organization":{"hostedJobsPageSlug":"evenup"},"jobBoard":{"teams":[{"id":"engineering","name":"Engineering","parentTeamId":null}],"jobPostings":[{"id":"job-1","title":"Software Engineer (New Grad), Data Products","teamId":"engineering","locationName":"San Francisco (hybrid)","employmentType":"FullTime","secondaryLocations":[{"locationName":"Toronto (hybrid)"}]}]}};</script></html>`))
+	}))
+	defer server.Close()
+	old := client
+	client = &http.Client{Transport: rewriteTransport{server.Listener.Addr().String()}}
+	t.Cleanup(func() { client = old })
+
+	jobs, err := fetchAshby(Company{Name: "EvenUp", Slug: "evenup"})
+	if err != nil || len(jobs) != 1 {
+		t.Fatalf("jobs=%v err=%v", jobs, err)
+	}
+	job := jobs[0]
+	if job.Location != "San Francisco (hybrid); Toronto (hybrid)" {
+		t.Errorf("location = %q", job.Location)
+	}
+	if job.Department != "Engineering" || job.EmploymentType != "FullTime" {
+		t.Errorf("metadata lost: %+v", job)
+	}
+	if job.URL != "https://jobs.ashbyhq.com/evenup/job-1" || !matches(job) {
+		t.Errorf("unexpected normalized job: %+v", job)
 	}
 }

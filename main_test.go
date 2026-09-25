@@ -25,6 +25,7 @@ func TestSupportedRequestedCompaniesAreConfigured(t *testing.T) {
 		"Okta", "Cloudflare", "MongoDB", "Robinhood", "DoorDash Canada", "EvenUp",
 		"Cursor", "Fireworks AI", "Harvey", "Together AI", "OpenAI", "Pinecone",
 		"Baseten", "Anyscale", "CoreWeave", "Glean", "Cohere", "Hugging Face", "Anthropic",
+		"Lightspeed", "Autodesk", "Ada", "Float", "KOHO", "Neo Financial", "Arctic Wolf",
 	}
 	configured := make(map[string]bool, len(companies))
 	for _, company := range companies {

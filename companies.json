@@ -134,5 +134,9 @@
   { "name": "SoFi",            "ats": "greenhouse",  "slug": "sofi" },
   { "name": "Duolingo",        "ats": "greenhouse",  "slug": "duolingo" },
   { "name": "Faire",           "ats": "greenhouse",  "slug": "faire" },
-  { "name": "GitLab",          "ats": "greenhouse",  "slug": "gitlab" }
+  { "name": "GitLab",          "ats": "greenhouse",  "slug": "gitlab" },
+  { "name": "Superhuman",      "ats": "greenhouse",  "slug": "grammarly" },
+  { "name": "Granola",         "ats": "ashby",       "slug": "granola" },
+  { "name": "Read AI",          "ats": "ashby",       "slug": "read-ai" },
+  { "name": "Otter.ai",        "ats": "greenhouse",  "slug": "otter" }
 ]

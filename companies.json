@@ -353,5 +353,11 @@
   { "name": "Thirty Madison", "ats": "greenhouse", "slug": "thirtymadison" },
   { "name": "Newsela", "ats": "greenhouse", "slug": "newsela" },
   { "name": "Paxos", "ats": "ashby", "slug": "paxos" },
-  { "name": "Valence", "ats": "ashby", "slug": "jobs-valence" }
+  { "name": "Valence", "ats": "ashby", "slug": "jobs-valence" },
+  { "name": "Pelago", "ats": "greenhouse", "slug": "pelago" },
+  { "name": "Didero", "ats": "ashby", "slug": "didero" },
+  { "name": "Chili Piper", "ats": "ashby", "slug": "chilipiper" },
+  { "name": "Osmo", "ats": "ashby", "slug": "osmo" },
+  { "name": "Basis AI", "ats": "ashby", "slug": "basis-ai" },
+  { "name": "Norm AI", "ats": "ashby", "slug": "norm-ai" }
 ]

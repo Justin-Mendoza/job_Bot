@@ -49,7 +49,7 @@ var (
 	earlyDeptRe   = regexp.MustCompile(`(?i)emerging\s+talent|early\s+career|new\s+grad|university\s+(recruit|program|hir)|campus\s+(recruit|hir)|\binternships?\b|\bco[ -]?ops?\b`)
 	juniorTitleRe = regexp.MustCompile(`(?i)\b(junior|jr\.?|associate|graduate)\b|\b(engineer|developer)\s+(i|1)\b`)
 	// axis 2 — is this actually software engineering?
-	sweRe = regexp.MustCompile(`(?i)software\s+eng|software\s+(test\s+)?dev|\bswe\b|backend|back.end|frontend|front.end|full.?stack|infrastructure eng|platform eng|systems eng|security eng|machine learning eng|\bml\s+eng|android eng|ios eng|mobile eng|site reliability|\bsre\b|research engineer`)
+	sweRe = regexp.MustCompile(`(?i)software\s+eng|software\s+(test\s+)?dev|\bswe\b|backend|back.end|frontend|front.end|full.?stack|infrastructure eng|platform eng|systems eng|security eng|machine learning eng|\bml\s+eng|android eng|ios eng|mobile eng|site reliability|\bsre\b|research engineer|\bfield engineer\b`)
 	// axis 2b — department fallback, for eng titles with no role keyword
 	engDeptRe = regexp.MustCompile(`(?i)engineer|software|infrastructure|platform|developer|technology`)
 	// axis 3 — hard excludes: recruiting, sales, ops, PhD, and anything senior

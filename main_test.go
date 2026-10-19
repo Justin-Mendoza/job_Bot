@@ -82,6 +82,10 @@ func TestEarlyCareerMetadata(t *testing.T) {
 		job  Job
 		want bool
 	}{
+		{Job{Company: "Pinecone", Title: "Associate Field Engineer", Department: "GTM", Location: "New York City", EmploymentType: "FullTime"}, true},
+		{Job{Title: "Senior Field Engineer", Location: "New York City"}, false},
+		{Job{Title: "Field Engineer", Location: "New York City"}, false},
+		{Job{Title: "Associate Field Engineer", Location: "London"}, false},
 		{Job{Title: "Software Engineer", Department: "Engineering; University Recruiting"}, true},
 		{Job{Title: "Software Engineer", Department: "Internships / Co-ops; Research"}, true},
 		{Job{Title: "Software Engineer", EmploymentType: "Intern"}, true},

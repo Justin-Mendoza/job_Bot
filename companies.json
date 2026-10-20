@@ -364,5 +364,10 @@
   { "name": "Chili Piper", "ats": "ashby", "slug": "chilipiper" },
   { "name": "Osmo", "ats": "ashby", "slug": "osmo" },
   { "name": "Basis AI", "ats": "ashby", "slug": "basis-ai" },
-  { "name": "Norm AI", "ats": "ashby", "slug": "norm-ai" }
+  { "name": "Norm AI", "ats": "ashby", "slug": "norm-ai" },
+  { "name": "Invisible Technologies", "ats": "greenhouse", "slug": "invisibletech" },
+  { "name": "Turing", "ats": "greenhouse", "slug": "turing" },
+  { "name": "Labelbox", "ats": "greenhouse", "slug": "labelbox" },
+  { "name": "Snorkel AI", "ats": "greenhouse", "slug": "snorkelai" },
+  { "name": "Mercor", "ats": "ashby", "slug": "mercor" }
 ]

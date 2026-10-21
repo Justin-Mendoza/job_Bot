@@ -1,13 +1,15 @@
 # jobwatch — new grad & internship alerter
 
-Polls company ATS boards every 3 minutes, pings Discord when a **software
+Polls 446 company ATS boards every 12 minutes, pings Discord when a **software
 engineering new grad or internship** role opens anywhere in the **US or
 Canada**. Runs on a
 Fly.io machine for ~$2/month.
 
-A full cycle across the 83 boards scans ~12,000 postings in **58–105 seconds**,
-using well under 100 MB of RSS. Against the 3-minute interval that is a 32–58%
-duty cycle.
+The 83-board benchmark scanned ~12,000 postings in **58–105 seconds**, using
+well under 100 MB of RSS. At 446 boards, a straight-line estimate from that
+benchmark is roughly **5–9 minutes per cycle**; actual network latency will
+vary, so remeasure after deploying this larger list. The 12-minute interval
+leaves room for that variance.
 
 That spread is network variance, not board size, and it is worth knowing before
 you trust any single measurement. Braze returns the same 195 KB response in
@@ -15,13 +17,11 @@ you trust any single measurement. Braze returns the same 195 KB response in
 dragged the whole cycle to 105s. Meanwhile Rippling pulls 664 postings in 4.9s.
 Four consecutive full scans measured 58s, 105s, 84s and 58s.
 
-**About 25s of every cycle is deliberate sleeping** — the 300 ms per-company
-stagger in `cycle()`, which at 83 boards is 24.9s. Drop it first if cycles ever
-start crowding the interval; it buys nothing but politeness. Roughly 150 boards
-is still the practical ceiling, but at the slow end that is ~80% duty rather
-than the comfortable margin the median suggests. If a cycle ever did overrun
-the interval, `time.Ticker` drops the missed tick rather than queueing, so it
-degrades into polling less often instead of falling behind forever.
+**About 25s of an 83-board cycle was deliberate sleeping** — the 300 ms
+per-company stagger in `cycle()`. At 446 boards, that stagger adds about 134s.
+If cycles start crowding the interval, reduce the stagger and remeasure. If a
+cycle ever overruns the interval, `time.Ticker` drops the missed tick rather
+than queueing, so it polls less often instead of falling behind forever.
 
 **Workday is the exception.** It hard-caps pages at 20 postings (`limit: 50+`
 returns zero), so Salesforce alone was 73 requests and 160 seconds — 93% of the
@@ -174,7 +174,7 @@ STATE_PATH=./seen.json DISCORD_WEBHOOK="your-url" ./jobwatch
 
 `STATE_PATH` overrides the default `/data/seen.json` so you don't need a `/data`
 mount locally. First run seeds silently and sends nothing — that's correct.
-Expect it to sit quiet for ~3 minutes, then log:
+Expect it to sit quiet for up to ~12 minutes, then log:
 
 ```
 first run: scanned 10372 jobs, seeded 2 matches, no alerts sent
@@ -208,7 +208,7 @@ it just looks like a quiet job market. Delete the whole block. The correct
 ## 6. Confirm it's alive
 
 ```bash
-fly logs                        # should show a cycle every 3 min
+fly logs                        # should show a cycle every 12 min
 fly status
 ```
 
@@ -252,8 +252,8 @@ pushing, use the workflow's **Run workflow** button (`workflow_dispatch`).
 | Outbound bandwidth (~1.4 GiB) | ~$0.03 |
 | **Total** | **~$2.20** |
 
-Measured at 83 boards on a 3-minute interval: 54 MiB pulled per cycle, about
-572 GiB/month — but **inbound transfer is free on Fly**, and outbound is only
+Historical measurement at 83 boards on a 3-minute interval: 54 MiB pulled per
+cycle — but **inbound transfer is free on Fly**, and outbound is only
 request headers plus the occasional Discord POST.
 
 Neither polling frequency nor company count moves this much; you pay for the
@@ -357,8 +357,9 @@ Two live examples of why the gate stays narrow:
 
 ## Adding companies
 
-Cycle time is not the limit — 83 boards scan 12,000 postings in 58–105s, still
-inside the 3-minute interval. The limit is **slug rot**,
+The 83-board benchmark scanned 12,000 postings in 58–105s; the current 446-board
+list uses a 12-minute interval based on a linear runtime estimate. Remeasure
+after adding a large batch. The limit is **slug rot**,
 and it is silent. Of 21 candidate slugs probed, 2 returned `200 OK` with
 `{"jobs":[]}`: a dead slug is indistinguishable from a quiet day unless you
 look. The cycle now logs `WARN ... board returned 0 jobs` for exactly this.

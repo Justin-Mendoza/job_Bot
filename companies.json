@@ -444,5 +444,8 @@
   { "name": "Wrapbook", "ats": "ashby", "slug": "wrapbook" },
   { "name": "Keycard", "ats": "ashby", "slug": "keycard-labs" },
   { "name": "Highbeam", "ats": "ashby", "slug": "highbeam" },
-  { "name": "Ignition", "ats": "ashby", "slug": "ignition" }
+  { "name": "Ignition", "ats": "ashby", "slug": "ignition" },
+  { "name": "Verse Medical", "ats": "ashby", "slug": "versemedical" },
+  { "name": "Parachute Health", "ats": "greenhouse", "slug": "parachutehealth" },
+  { "name": "Medely", "ats": "ashby", "slug": "medely" }
 ]

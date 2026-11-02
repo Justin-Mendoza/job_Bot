@@ -1,15 +1,19 @@
 # jobwatch — new grad & internship alerter
 
-Polls 446 company ATS boards every 12 minutes, pings Discord when a **software
+Polls 461 company ATS boards every 12 minutes, pings Discord when a **software
 engineering new grad or internship** role opens anywhere in the **US or
 Canada**. Runs on a
 Fly.io machine for ~$2/month.
 
-The 83-board benchmark scanned ~12,000 postings in **58–105 seconds**, using
-well under 100 MB of RSS. At 446 boards, a straight-line estimate from that
-benchmark is roughly **5–9 minutes per cycle**; actual network latency will
-vary, so remeasure after deploying this larger list. The 12-minute interval
-leaves room for that variance.
+Board scans now use **five concurrent workers**, with board starts spaced at
+least 300 ms apart globally. Slow responses can overlap, while each adapter
+keeps its existing pagination delays. Results are processed in watchlist order
+to preserve alert priority, and state updates and Discord delivery stay serial.
+Cycle logs include elapsed time so scan duration can be measured after deploy.
+
+The historical serial 83-board benchmark scanned ~12,000 postings in
+**58–105 seconds**, using well under 100 MB of RSS. This is not a benchmark of
+the concurrent scanner; remeasure duration and memory with the current list.
 
 That spread is network variance, not board size, and it is worth knowing before
 you trust any single measurement. Braze returns the same 195 KB response in
@@ -17,9 +21,9 @@ you trust any single measurement. Braze returns the same 195 KB response in
 dragged the whole cycle to 105s. Meanwhile Rippling pulls 664 postings in 4.9s.
 Four consecutive full scans measured 58s, 105s, 84s and 58s.
 
-**About 25s of an 83-board cycle was deliberate sleeping** — the 300 ms
-per-company stagger in `cycle()`. At 446 boards, that stagger adds about 134s.
-If cycles start crowding the interval, reduce the stagger and remeasure. If a
+The 300 ms spacing imposes a minimum launch window of about 138 seconds for
+461 boards, with network waits now overlapping that window. Five slow boards
+can still occupy all workers and extend the scan. If a
 cycle ever overruns the interval, `time.Ticker` drops the missed tick rather
 than queueing, so it polls less often instead of falling behind forever.
 
@@ -85,9 +89,15 @@ Greenhouse retains all departments for jobs listed more than once, and Lever
 retains all locations. Unlabeled roles at other companies are still ambiguous:
 descriptions are not classified, and Snap Level 3 is still excluded.
 
+The November 2 Canadian expansion adds 12 verified boards for Toronto,
+Vancouver and remote-Canada prospects; see [the company list and current
+shortlist](CANADA_EXPANSION.md). Existing US/Canada coverage remains enabled.
+
 Run the read-only audit with
 `JOBWATCH_AUDIT=/tmp/jobwatch-audit.json go test -run TestLiveBoardAudit -v -count=1 .`.
 It never sends Discord alerts or changes seen state. Normal tests need no network.
+Set `JOBWATCH_AUDIT_COMPANIES=/path/to/companies.json` to audit a smaller list.
+The report includes both job counts and the jobs that passed the actual filter.
 
 A job has to clear four gates in `matches()` (`main.go`). All four, or no alert:
 
@@ -357,9 +367,9 @@ Two live examples of why the gate stays narrow:
 
 ## Adding companies
 
-The 83-board benchmark scanned 12,000 postings in 58–105s; the current 446-board
-list uses a 12-minute interval based on a linear runtime estimate. Remeasure
-after adding a large batch. The limit is **slug rot**,
+The historical serial 83-board benchmark scanned 12,000 postings in 58–105s.
+The current scanner uses five workers and a 12-minute interval. Remeasure
+duration and memory after adding a large batch. Another limit is **slug rot**,
 and it is silent. Of 21 candidate slugs probed, 2 returned `200 OK` with
 `{"jobs":[]}`: a dead slug is indistinguishable from a quiet day unless you
 look. The cycle now logs `WARN ... board returned 0 jobs` for exactly this.

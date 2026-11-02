@@ -12,6 +12,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -49,7 +50,7 @@ var (
 	earlyDeptRe   = regexp.MustCompile(`(?i)emerging\s+talent|early\s+career|new\s+grad|university\s+(recruit|program|hir)|campus\s+(recruit|hir)|\binternships?\b|\bco[ -]?ops?\b`)
 	juniorTitleRe = regexp.MustCompile(`(?i)\b(junior|jr\.?|associate|graduate)\b|\b(engineer|developer)\s+(i|1)\b`)
 	// axis 2 — is this actually software engineering?
-	sweRe = regexp.MustCompile(`(?i)software\s+eng|software\s+(test\s+)?dev|\bswe\b|backend|back.end|frontend|front.end|full.?stack|infrastructure eng|platform eng|systems eng|security eng|machine learning eng|\bml\s+eng|android eng|ios eng|mobile eng|site reliability|\bsre\b|research engineer|\bfield engineer\b`)
+	sweRe = regexp.MustCompile(`(?i)software\s+eng|software\s+(test\s+)?dev|\bswe\b|backend|back.end|frontend|front.end|full.?stack|infrastructure eng|platform eng|systems eng|security eng|machine learning eng|\bml\s+eng|android (eng|dev)|ios (eng|dev)|mobile (eng|dev)|site reliability|\bsre\b|research engineer|\bfield engineer\b|\b(junior|jr\.?|graduate)\s+developer\b`)
 	// axis 2b — department fallback, for eng titles with no role keyword
 	engDeptRe = regexp.MustCompile(`(?i)engineer|software|infrastructure|platform|developer|technology`)
 	// axis 3 — hard excludes: recruiting, sales, ops, PhD, and anything senior
@@ -67,7 +68,7 @@ var (
 	foreignRe = regexp.MustCompile(`(?i)\b(` +
 		// countries and regions
 		`spain|poland|india|ireland|germany|france|uk|united kingdom|england|scotland|wales|` +
-		`brazil|mexico|singapore|japan|australia|new zealand|netherlands|portugal|romania|` +
+		`brazil|mexico|costa rica|singapore|japan|australia|new zealand|netherlands|portugal|romania|` +
 		`israel|italy|sweden|switzerland|china|korea|taiwan|philippines|vietnam|thailand|` +
 		`indonesia|malaysia|argentina|colombia|chile|peru|egypt|nigeria|kenya|south africa|` +
 		`africa|uae|qatar|saudi|turkey|greece|norway|denmark|finland|belgium|austria|czechia|` +
@@ -107,7 +108,7 @@ const (
 	// not deferred — at 20 the first cycle after that change would have marked
 	// ~18 real internships seen without ever alerting on them.
 	maxPerCycle  = 50
-	pollInterval = 12 * time.Minute // ~446 boards; budget for the larger scan cycle
+	pollInterval = 12 * time.Minute // budget for the larger scan cycle
 )
 
 var statePath = envOr("STATE_PATH", "/data/seen.json")
@@ -795,7 +796,39 @@ func priorityEngineering(j Job) bool {
 		technicalStaffRe.MatchString(j.Title) || priorityRoleRe.MatchString(j.Title))
 }
 
+type boardResult struct {
+	jobs []Job
+	err  error
+}
+
+// Fetch concurrently, but space board starts globally to avoid a request burst.
+// Keep results in watchlist order so slow boards do not lose alert priority.
+func fetchBoards(companies []Company, workers int, stagger time.Duration, fetchBoard func(Company) ([]Job, error)) []boardResult {
+	results := make([]boardResult, len(companies))
+	indices := make(chan int)
+	var wg sync.WaitGroup
+	for worker := 0; worker < workers; worker++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range indices {
+				results[i].jobs, results[i].err = fetchBoard(companies[i])
+			}
+		}()
+	}
+	for i := range companies {
+		if i > 0 {
+			time.Sleep(stagger)
+		}
+		indices <- i
+	}
+	close(indices)
+	wg.Wait()
+	return results
+}
+
 func cycle(companies []Company, seen map[string]bool, seeded bool, webhook string) {
+	started := time.Now()
 	var fresh []Job
 	scanned, failed := 0, 0
 	// live holds every posting seen on a board this cycle; prunable holds the
@@ -803,8 +836,9 @@ func cycle(companies []Company, seen map[string]bool, seeded bool, webhook strin
 	// no longer on them. See prune().
 	live := make(map[string]bool, 12000)
 	prunable := make(map[string]bool, len(companies))
-	for _, c := range companies {
-		jobs, err := fetch(c)
+	results := fetchBoards(companies, 5, 300*time.Millisecond, fetch)
+	for i, c := range companies {
+		jobs, err := results[i].jobs, results[i].err
 		if err != nil {
 			failed++
 			log.Printf("%s (%s): %v", c.Name, c.ATS, err)
@@ -828,7 +862,6 @@ func cycle(companies []Company, seen map[string]bool, seeded bool, webhook strin
 			j.ReviewLevel = !earlyCareer(j)
 			fresh = append(fresh, j)
 		}
-		time.Sleep(300 * time.Millisecond) // stagger
 	}
 
 	// First run records everything and alerts on nothing, so you don't get the
@@ -837,7 +870,7 @@ func cycle(companies []Company, seen map[string]bool, seeded bool, webhook strin
 		for _, j := range fresh {
 			seen[j.Key()] = true
 		}
-		log.Printf("first run: scanned %d jobs, seeded %d matches, no alerts sent", scanned, len(fresh))
+		log.Printf("first run: scanned %d jobs, seeded %d matches, no alerts sent (elapsed %s)", scanned, len(fresh), time.Since(started).Round(time.Millisecond))
 		saveState(seen)
 		return
 	}
@@ -865,7 +898,7 @@ func cycle(companies []Company, seen map[string]bool, seeded bool, webhook strin
 	if n := prune(seen, live, prunable); n > 0 {
 		log.Printf("pruned %d closed postings from state", n)
 	}
-	log.Printf("cycle: %d jobs scanned, %d boards failed, %d sent, %d retrying", scanned, failed, sent, retry)
+	log.Printf("cycle: %d jobs scanned, %d boards failed, %d sent, %d retrying (elapsed %s)", scanned, failed, sent, retry, time.Since(started).Round(time.Millisecond))
 
 	saveState(seen)
 }

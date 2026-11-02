@@ -8,13 +8,14 @@ import (
 )
 
 // Opt-in read-only audit: fetches every configured board, never sends alerts
-// or touches seen state. JOBWATCH_AUDIT names the output JSON report.
+// or touches seen state. JOBWATCH_AUDIT names the output JSON report;
+// JOBWATCH_AUDIT_COMPANIES optionally selects a smaller company-list file.
 func TestLiveBoardAudit(t *testing.T) {
 	path := os.Getenv("JOBWATCH_AUDIT")
 	if path == "" {
 		t.Skip("set JOBWATCH_AUDIT to run live board checks")
 	}
-	raw, err := os.ReadFile("companies.json")
+	raw, err := os.ReadFile(envOr("JOBWATCH_AUDIT_COMPANIES", "companies.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -23,10 +24,11 @@ func TestLiveBoardAudit(t *testing.T) {
 		t.Fatal(err)
 	}
 	type result struct {
-		Company Company
-		Error   string
-		Jobs    []Job
-		Matches int
+		Company      Company
+		Error        string
+		Jobs         []Job
+		Matches      int
+		MatchingJobs []Job
 	}
 	results := make([]result, len(companies))
 	var wg sync.WaitGroup
@@ -45,6 +47,7 @@ func TestLiveBoardAudit(t *testing.T) {
 			for _, j := range jobs {
 				if matches(j) {
 					r.Matches++
+					r.MatchingJobs = append(r.MatchingJobs, j)
 				}
 			}
 			results[i] = r

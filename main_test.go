@@ -2,12 +2,71 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
+
+func TestFetchBoardsConcurrencyAndOrder(t *testing.T) {
+	companies := []Company{{Name: "A"}, {Name: "B"}, {Name: "C"}, {Name: "D"}}
+	started := make(chan struct{}, len(companies))
+	release := make(chan struct{})
+	var once sync.Once
+	unblock := func() { once.Do(func() { close(release) }) }
+	defer unblock()
+	var active atomic.Int32
+	var exceeded atomic.Bool
+	boardErr := errors.New("board unavailable")
+	done := make(chan []boardResult, 1)
+	go func() {
+		done <- fetchBoards(companies, 2, 0, func(c Company) ([]Job, error) {
+			if active.Add(1) > 2 {
+				exceeded.Store(true)
+			}
+			defer active.Add(-1)
+			started <- struct{}{}
+			<-release
+			if c.Name == "B" {
+				return nil, boardErr
+			}
+			return []Job{{Company: c.Name, ID: c.Name}}, nil
+		})
+	}()
+	// Both workers must enter the fetch before either is allowed to finish.
+	for i := 0; i < 2; i++ {
+		select {
+		case <-started:
+		case <-time.After(5 * time.Second):
+			t.Fatal("board fetches did not overlap")
+		}
+	}
+	unblock()
+	select {
+	case results := <-done:
+		if exceeded.Load() {
+			t.Fatal("exceeded the worker limit")
+		}
+		for i, c := range companies {
+			if c.Name == "B" {
+				if !errors.Is(results[i].err, boardErr) {
+					t.Fatal("board failure was lost")
+				}
+				continue
+			}
+			if results[i].err != nil || len(results[i].jobs) != 1 || results[i].jobs[0].Company != c.Name {
+				t.Fatalf("result %d was lost or reordered: %+v", i, results[i])
+			}
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("board scan did not finish")
+	}
+}
 
 func TestSupportedRequestedCompaniesAreConfigured(t *testing.T) {
 	raw, err := os.ReadFile("companies.json")
@@ -68,6 +127,16 @@ func TestPriorityMatches(t *testing.T) {
 		{"Other", "Associate Financial Analyst", "Toronto", false},
 		{"Other", "Associate General Counsel", "Toronto", false},
 		{"Other", "Junior Software Engineer", "Mexico City, Mexico", false},
+		{"Harbor", "Junior Developer (Finance Systems)", "Remote, Canada; UK - Remote", true},
+		{"Other", "Jr. Developer", "Toronto", true},
+		{"Other", "Graduate Developer", "Vancouver", true},
+		{"Konrad", "Mobile Developer (Entry Level)", "Toronto", true},
+		{"Other", "Junior Android Developer", "Vancouver", true},
+		{"Other", "Junior iOS Developer", "Remote, Canada", true},
+		{"Other", "Junior Business Developer", "Toronto", false},
+		{"Other", "Senior Mobile Developer", "Toronto", false},
+		{"Other", "Junior Developer", "London, UK", false},
+		{"Konrad", "Software Developer Intern", "Costa Rica", false},
 	} {
 		t.Run(tc.company+tc.title+tc.location, func(t *testing.T) {
 			if got := matches(Job{Company: tc.company, Title: tc.title, Location: tc.location}); got != tc.want {

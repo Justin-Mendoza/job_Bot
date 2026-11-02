@@ -447,5 +447,17 @@
   { "name": "Ignition", "ats": "ashby", "slug": "ignition" },
   { "name": "Verse Medical", "ats": "ashby", "slug": "versemedical" },
   { "name": "Parachute Health", "ats": "greenhouse", "slug": "parachutehealth" },
-  { "name": "Medely", "ats": "ashby", "slug": "medely" }
+  { "name": "Medely", "ats": "ashby", "slug": "medely" },
+  {"name": "Quora", "ats": "ashby", "slug": "quora"},
+  {"name": "Veeva Systems", "ats": "lever", "slug": "veeva"},
+  {"name": "Konrad", "ats": "greenhouse", "slug": "konradgroup"},
+  {"name": "Evismart", "ats": "greenhouse", "slug": "evismart"},
+  {"name": "Harbor", "ats": "greenhouse", "slug": "harborglobal"},
+  {"name": "Canonical", "ats": "greenhouse", "slug": "canonical"},
+  {"name": "IXL Learning", "ats": "greenhouse", "slug": "ixllearning"},
+  {"name": "AtoB", "ats": "ashby", "slug": "atob"},
+  {"name": "Global Relay", "ats": "greenhouse", "slug": "globalrelay"},
+  {"name": "Later", "ats": "greenhouse", "slug": "later"},
+  {"name": "Fullscript", "ats": "lever", "slug": "fullscript"},
+  {"name": "Toast", "ats": "greenhouse", "slug": "toast"}
 ]
